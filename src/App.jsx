@@ -1753,7 +1753,7 @@ export default function HighlineFantasyGolf() {
     // For date comparison, we need to handle the ESPN timeline
     const espnEvent = espnData?.events?.[0];
     const espnEventName = espnEvent?.name?.toLowerCase() || '';
-    const espnStatus = espnEvent?.status?.type?.name?.toLowerCase() || '';
+    const espnState = espnEvent?.status?.type?.state || '';  // "in", "pre", or "post"
     
     // Use the league config year for parsing our tournament dates
     const currentYear = LEAGUE_CONFIG.year || 2026;
@@ -1764,7 +1764,7 @@ export default function HighlineFantasyGolf() {
     // Debug logging (can remove later)
     console.log('Today:', today);
     console.log('ESPN Event:', espnEventName);
-    console.log('ESPN Status:', espnStatus);
+    console.log('ESPN State:', espnState);
     
     // Month name to number mapping
     const monthMap = {
@@ -1846,7 +1846,7 @@ export default function HighlineFantasyGolf() {
         t.name.toLowerCase().includes(keyword)
       );
       
-      if (isMatchingESPN && espnStatus !== 'post') {
+      if (isMatchingESPN && espnState === 'in') {
         return { ...t, status: 'live' };
       }
       
@@ -1854,7 +1854,7 @@ export default function HighlineFantasyGolf() {
       // This could mean it just ended or is about to start
       if (today >= startDate && today <= endDate) {
         // Check ESPN status
-        if (espnStatus === 'post' || espnStatus === 'final') {
+        if (espnState === 'post') {
           return { ...t, status: 'final' };
         }
         return { ...t, status: 'live' };
