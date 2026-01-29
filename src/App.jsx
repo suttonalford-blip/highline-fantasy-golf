@@ -1752,7 +1752,7 @@ export default function HighlineFantasyGolf() {
     
     // Current date for comparison
     const today = new Date();
-    const currentYear = 2026; // League year
+    const currentYear = today.getFullYear(); // Use actual current year
     
     // Month name to number mapping
     const monthMap = {
@@ -1760,22 +1760,43 @@ export default function HighlineFantasyGolf() {
       'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
     };
     
-    // Parse tournament dates (format: "Feb 5-8" or "Apr 9-12")
+    // Parse tournament dates (format: "Feb 5-8" or "Apr 9-12" or "Jan 29-Feb 1")
     const parseTournamentDates = (dateStr) => {
-      const match = dateStr.match(/([A-Za-z]+)\s+(\d+)-(\d+)/);
-      if (!match) return null;
+      // First try: cross-month format like "Jan 29-Feb 1"
+      const crossMonthMatch = dateStr.match(/([A-Za-z]+)\s+(\d+)-([A-Za-z]+)\s+(\d+)/);
+      if (crossMonthMatch) {
+        const startMonthName = crossMonthMatch[1].toLowerCase().substring(0, 3);
+        const startDay = parseInt(crossMonthMatch[2]);
+        const endMonthName = crossMonthMatch[3].toLowerCase().substring(0, 3);
+        const endDay = parseInt(crossMonthMatch[4]);
+        const startMonth = monthMap[startMonthName];
+        const endMonth = monthMap[endMonthName];
+        
+        if (startMonth === undefined || endMonth === undefined) return null;
+        
+        const startDate = new Date(currentYear, startMonth, startDay);
+        const endDate = new Date(currentYear, endMonth, endDay, 23, 59, 59);
+        
+        return { startDate, endDate };
+      }
       
-      const monthName = match[1].toLowerCase().substring(0, 3);
-      const startDay = parseInt(match[2]);
-      const endDay = parseInt(match[3]);
-      const month = monthMap[monthName];
+      // Second try: same-month format like "Feb 5-8"
+      const sameMonthMatch = dateStr.match(/([A-Za-z]+)\s+(\d+)-(\d+)/);
+      if (sameMonthMatch) {
+        const monthName = sameMonthMatch[1].toLowerCase().substring(0, 3);
+        const startDay = parseInt(sameMonthMatch[2]);
+        const endDay = parseInt(sameMonthMatch[3]);
+        const month = monthMap[monthName];
+        
+        if (month === undefined) return null;
+        
+        const startDate = new Date(currentYear, month, startDay);
+        const endDate = new Date(currentYear, month, endDay, 23, 59, 59); // End of day
+        
+        return { startDate, endDate };
+      }
       
-      if (month === undefined) return null;
-      
-      const startDate = new Date(currentYear, month, startDay);
-      const endDate = new Date(currentYear, month, endDay, 23, 59, 59); // End of day
-      
-      return { startDate, endDate };
+      return null;
     };
     
     // Get ESPN tournament name for matching
