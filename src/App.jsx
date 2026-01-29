@@ -1750,9 +1750,21 @@ export default function HighlineFantasyGolf() {
       ...LEAGUE_CONFIG.season2Tournaments.map(t => ({ ...t, season: 2 }))
     ];
     
-    // Current date for comparison
+    // For date comparison, we need to handle the ESPN timeline
+    const espnEvent = espnData?.events?.[0];
+    const espnEventName = espnEvent?.name?.toLowerCase() || '';
+    const espnStatus = espnEvent?.status?.type?.name?.toLowerCase() || '';
+    
+    // Use the league config year for parsing our tournament dates
+    const currentYear = LEAGUE_CONFIG.year || 2026;
+    
+    // Use real current date
     const today = new Date();
-    const currentYear = today.getFullYear(); // Use actual current year
+    
+    // Debug logging (can remove later)
+    console.log('Today:', today);
+    console.log('ESPN Event:', espnEventName);
+    console.log('ESPN Status:', espnStatus);
     
     // Month name to number mapping
     const monthMap = {
@@ -1799,10 +1811,6 @@ export default function HighlineFantasyGolf() {
       return null;
     };
     
-    // Get ESPN tournament name for matching
-    const espnTournamentName = espnData?.events?.[0]?.name?.toLowerCase() || '';
-    const espnStatus = espnData?.events?.[0]?.status?.type?.name?.toLowerCase() || '';
-    
     return all.map(t => {
       // Check if we have saved results for this tournament
       const hasResults = tournamentResults[t.id]?.final;
@@ -1833,8 +1841,8 @@ export default function HighlineFantasyGolf() {
       // Match by checking if tournament names have common keywords
       const tournamentKeywords = t.name.toLowerCase().split(' ').filter(w => w.length > 3);
       const isMatchingESPN = tournamentKeywords.some(keyword => 
-        espnTournamentName.includes(keyword)
-      ) || espnTournamentName.split(' ').filter(w => w.length > 3).some(keyword =>
+        espnEventName.includes(keyword)
+      ) || espnEventName.split(' ').filter(w => w.length > 3).some(keyword =>
         t.name.toLowerCase().includes(keyword)
       );
       
