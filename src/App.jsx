@@ -1,4 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getDatabase, ref, onValue, set } from 'firebase/database';
+
+// Firebase Configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyD98XTU_SfFu9x4F5jqLDdne8_2hfH90qg",
+  authDomain: "highline-fantasy-golf.firebaseapp.com",
+  databaseURL: "https://highline-fantasy-golf-default-rtdb.firebaseio.com",
+  projectId: "highline-fantasy-golf",
+  storageBucket: "highline-fantasy-golf.firebasestorage.app",
+  messagingSenderId: "875515042100",
+  appId: "1:875515042100:web:f0146bbd4a12452c9ead61"
+};
+
+// Initialize Firebase
+const firebaseApp = initializeApp(firebaseConfig);
+const database = getDatabase(firebaseApp);
 
 // League Configuration
 const LEAGUE_CONFIG = {
@@ -1818,99 +1835,92 @@ export default function HighlineFantasyGolf() {
     });
   };
 
-  // Load persisted data from localStorage
+  // Load data from Firebase with real-time listeners
   useEffect(() => {
-    const loadData = () => {
-      try {
-        const rostersData = localStorage.getItem(STORAGE_KEYS.ROSTERS);
-        const lineupsData = localStorage.getItem(STORAGE_KEYS.LINEUPS);
-        const resultsData = localStorage.getItem(STORAGE_KEYS.TOURNAMENT_RESULTS);
-        const rentalsData = localStorage.getItem(STORAGE_KEYS.RENTALS);
-        const preDraftData = localStorage.getItem(STORAGE_KEYS.PREDRAFT_LINEUPS);
-        
-        if (rostersData) {
-          setRosters(JSON.parse(rostersData));
-        } else {
-          // Initialize empty rosters
-          const initialRosters = {};
-          LEAGUE_CONFIG.teams.forEach(team => {
-            initialRosters[team.id] = { players: [] };
-          });
-          setRosters(initialRosters);
-        }
-        
-        if (lineupsData) {
-          setLineups(JSON.parse(lineupsData));
-        }
-        
-        if (resultsData) {
-          setTournamentResults(JSON.parse(resultsData));
-        }
-        
-        if (rentalsData) {
-          setRentals(JSON.parse(rentalsData));
-        }
-        
-        if (preDraftData) {
-          setPreDraftLineups(JSON.parse(preDraftData));
-        }
-      } catch (e) {
-        console.log('Error loading data:', e);
-        // Fallback to empty state
-        const initialRosters = {};
-        LEAGUE_CONFIG.teams.forEach(team => {
-          initialRosters[team.id] = { players: [] };
-        });
+    // Initialize empty rosters first
+    const initialRosters = {};
+    LEAGUE_CONFIG.teams.forEach(team => {
+      initialRosters[team.id] = { players: [] };
+    });
+
+    // Set up real-time listeners for each data type
+    const rostersRef = ref(database, 'rosters');
+    const lineupsRef = ref(database, 'lineups');
+    const resultsRef = ref(database, 'tournamentResults');
+    const rentalsRef = ref(database, 'rentals');
+    const preDraftRef = ref(database, 'preDraftLineups');
+
+    const unsubscribeRosters = onValue(rostersRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setRosters(data);
+      } else {
         setRosters(initialRosters);
       }
+    });
+
+    const unsubscribeLineups = onValue(lineupsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setLineups(data);
+      }
+    });
+
+    const unsubscribeResults = onValue(resultsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setTournamentResults(data);
+      }
+    });
+
+    const unsubscribeRentals = onValue(rentalsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setRentals(data);
+      }
+    });
+
+    const unsubscribePreDraft = onValue(preDraftRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setPreDraftLineups(data);
+      }
+    });
+
+    // Cleanup listeners on unmount
+    return () => {
+      unsubscribeRosters();
+      unsubscribeLineups();
+      unsubscribeResults();
+      unsubscribeRentals();
+      unsubscribePreDraft();
     };
-    loadData();
   }, []);
 
-  // Save data when it changes
+  // Save data to Firebase
   const saveRosters = (newRosters) => {
     setRosters(newRosters);
-    try {
-      localStorage.setItem(STORAGE_KEYS.ROSTERS, JSON.stringify(newRosters));
-    } catch (e) {
-      console.log('Storage not available');
-    }
+    set(ref(database, 'rosters'), newRosters);
   };
 
   const savePreDraftLineups = (newLineups) => {
     setPreDraftLineups(newLineups);
-    try {
-      localStorage.setItem(STORAGE_KEYS.PREDRAFT_LINEUPS, JSON.stringify(newLineups));
-    } catch (e) {
-      console.log('Storage not available');
-    }
+    set(ref(database, 'preDraftLineups'), newLineups);
   };
 
   const saveLineups = (newLineups) => {
     setLineups(newLineups);
-    try {
-      localStorage.setItem(STORAGE_KEYS.LINEUPS, JSON.stringify(newLineups));
-    } catch (e) {
-      console.log('Storage not available');
-    }
+    set(ref(database, 'lineups'), newLineups);
   };
 
   const saveTournamentResults = (newResults) => {
     setTournamentResults(newResults);
-    try {
-      localStorage.setItem(STORAGE_KEYS.TOURNAMENT_RESULTS, JSON.stringify(newResults));
-    } catch (e) {
-      console.log('Storage not available');
-    }
+    set(ref(database, 'tournamentResults'), newResults);
   };
 
   const saveRentals = (newRentals) => {
     setRentals(newRentals);
-    try {
-      localStorage.setItem(STORAGE_KEYS.RENTALS, JSON.stringify(newRentals));
-    } catch (e) {
-      console.log('Storage not available');
-    }
+    set(ref(database, 'rentals'), newRentals);
   };
 
   // Add rental player to lineup
