@@ -688,6 +688,52 @@ const styles = `
     font-weight: 500;
   }
 
+  .bonus-toggle {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .bonus-toggle.active {
+    background: rgba(0, 255, 135, 0.15);
+    border: 1px solid rgba(0, 255, 135, 0.3);
+    color: var(--accent-green);
+  }
+
+  .bonus-toggle.inactive {
+    background: rgba(255, 71, 87, 0.1);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    color: var(--accent-red);
+    text-decoration: line-through;
+  }
+
+  .bonus-toggle:hover {
+    opacity: 0.8;
+  }
+
+  .round-badge {
+    padding: 4px 10px;
+    background: rgba(0, 212, 255, 0.15);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--accent-blue);
+    font-weight: 500;
+  }
+
+  .cut-line-badge {
+    padding: 4px 10px;
+    background: rgba(255, 159, 67, 0.15);
+    border: 1px solid rgba(255, 159, 67, 0.3);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--accent-orange);
+    font-weight: 500;
+  }
+
   .scoreboard-grid {
     display: grid;
     grid-template-columns: repeat(10, 1fr);
@@ -1734,6 +1780,7 @@ export default function HighlineFantasyGolf() {
   const [selectedTeamForRental, setSelectedTeamForRental] = useState(1);
   const [preDraftSearchQuery, setPreDraftSearchQuery] = useState('');
   const [selectedTeamForPreDraft, setSelectedTeamForPreDraft] = useState(1);
+  const [bonusEnabled, setBonusEnabled] = useState(true); // Toggle for -10 winner bonus
 
   // Get all tournaments with status
   const getAllTournaments = () => {
@@ -2051,8 +2098,8 @@ export default function HighlineFantasyGolf() {
   const calculatePreDraftStandings = () => {
     const leaderboard = getLeaderboard();
     
-    // Check if winner bonus is active (Round 3 or later)
-    const winnerBonusActive = isRound3OrLater();
+    // Check if winner bonus is active (Round 3 or later AND toggle is enabled)
+    const winnerBonusActive = isRound3OrLater() && bonusEnabled;
     const leaders = winnerBonusActive ? getLeaders() : [];
     
     // Calculate penalty scores for MC/WD/DQ
@@ -2224,12 +2271,43 @@ export default function HighlineFantasyGolf() {
   const getCurrentTournament = () => {
     if (!espnData?.events?.[0]) return null;
     const event = espnData.events[0];
+    const competition = event.competitions?.[0];
+    const venue = competition?.venue;
+
+    // Try multiple venue fields for course name
+    const courseName = venue?.fullName || venue?.shortName || venue?.address?.city || '';
+
+    // Get cut line info if available
+    const cutLine = competition?.cutLine?.score || null;
+    const projectedCutLine = competition?.projectedCutLine?.score || competition?.status?.cutLine || null;
+
     return {
       name: event.name,
       status: event.status?.type?.description || 'Unknown',
-      course: event.competitions?.[0]?.venue?.fullName || '',
-      dates: `${new Date(event.date).toLocaleDateString()} - ${new Date(event.endDate).toLocaleDateString()}`
+      course: courseName,
+      dates: `${new Date(event.date).toLocaleDateString()} - ${new Date(event.endDate).toLocaleDateString()}`,
+      cutLine,
+      projectedCutLine
     };
+  };
+
+  // Get current round number based on top players' progress
+  const getCurrentRound = () => {
+    if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return 0;
+    const competitors = espnData.events[0].competitions[0].competitors;
+    const topPlayers = competitors.slice(0, 10);
+    const roundsCompleted = topPlayers.map(p => {
+      const linescores = p.linescores || [];
+      return linescores.filter(r => r.displayValue && r.displayValue !== '-').length;
+    });
+    const avgRoundsCompleted = roundsCompleted.reduce((a, b) => a + b, 0) / roundsCompleted.length;
+
+    // If avg rounds completed is 0.5, they're in round 1, if 1.5 they're in round 2, etc.
+    if (avgRoundsCompleted < 0.5) return 1;
+    if (avgRoundsCompleted < 1.5) return 1;
+    if (avgRoundsCompleted < 2.5) return 2;
+    if (avgRoundsCompleted < 3.5) return 3;
+    return 4;
   };
 
   // Get leaderboard from ESPN data
@@ -2345,8 +2423,8 @@ export default function HighlineFantasyGolf() {
     const isMajor = currentTournament?.isMajor || false;
     const requiredStarters = isMajor ? LEAGUE_CONFIG.startersMajor : LEAGUE_CONFIG.startersRegular;
     
-    // Check if winner bonus is active (Round 3 or later)
-    const winnerBonusActive = isRound3OrLater();
+    // Check if winner bonus is active (Round 3 or later AND toggle is enabled)
+    const winnerBonusActive = isRound3OrLater() && bonusEnabled;
     const leaders = winnerBonusActive ? getLeaders() : [];
     
     // Calculate penalty scores for MC/WD/DQ
@@ -2710,8 +2788,12 @@ export default function HighlineFantasyGolf() {
                         )}
                         {tourneyStatus === 'live' && tournament && (
                           <>
-                            <span>📍 {tournament.course || 'TBD'}</span>
+                            {tournament.course && <span>📍 {tournament.course}</span>}
                             <span>🏆 {tournament.status}</span>
+                            <span className="round-badge">Round {getCurrentRound()}</span>
+                            {getCurrentRound() === 2 && tournament.projectedCutLine && (
+                              <span className="cut-line-badge">✂️ Proj. Cut: {tournament.projectedCutLine > 0 ? '+' : ''}{tournament.projectedCutLine}</span>
+                            )}
                           </>
                         )}
                         {tourneyStatus === 'upcoming' && !selectedTourneyConfig?.isPreDraft && (
@@ -2951,7 +3033,13 @@ export default function HighlineFantasyGolf() {
                           <div className="scoreboard-title">
                             🎯 Draft Order Standings
                             {isRound3OrLater() && (
-                              <span className="bonus-badge">-10 Winner Bonus Active</span>
+                              <button
+                                className={`bonus-toggle ${bonusEnabled ? 'active' : 'inactive'}`}
+                                onClick={() => setBonusEnabled(!bonusEnabled)}
+                                title={bonusEnabled ? 'Click to exclude winner bonus from scores' : 'Click to include winner bonus in scores'}
+                              >
+                                {bonusEnabled ? '✓' : '✗'} -10 Winner Bonus
+                              </button>
                             )}
                           </div>
                         </div>
@@ -3258,7 +3346,13 @@ export default function HighlineFantasyGolf() {
                       <div className="scoreboard-title">
                         🏆 Team Standings
                         {isRound3OrLater() && (
-                          <span className="bonus-badge">-10 Winner Bonus Active</span>
+                          <button
+                            className={`bonus-toggle ${bonusEnabled ? 'active' : 'inactive'}`}
+                            onClick={() => setBonusEnabled(!bonusEnabled)}
+                            title={bonusEnabled ? 'Click to exclude winner bonus from scores' : 'Click to include winner bonus in scores'}
+                          >
+                            {bonusEnabled ? '✓' : '✗'} -10 Winner Bonus
+                          </button>
                         )}
                       </div>
                     </div>
