@@ -2977,7 +2977,8 @@ export default function HighlineFantasyGolf() {
                                 <div className="scoreboard-players">
                                   {team.starters.length > 0 ? (
                                     team.starters.map((starter, sIdx) => {
-                                      const isLeader = getLeaders().includes(starter.name.toLowerCase());
+                                      const bonusActive = isRound3OrLater();
+                                      const isLeader = bonusActive && !starter.isCut && !starter.isWD && !starter.isDQ && getLeaders().includes(starter.name.toLowerCase());
                                       const hasPenalty = starter.isCut || starter.isWD || starter.isDQ;
                                       const playerScore = starter.scoreNum || 0;
                                       return (
@@ -3280,7 +3281,8 @@ export default function HighlineFantasyGolf() {
                             <div className="scoreboard-players">
                               {team.starters.length > 0 ? (
                                 team.starters.map((starter, sIdx) => {
-                                  const isLeader = getLeaders().includes(starter.name.toLowerCase());
+                                  const bonusActive = isRound3OrLater();
+                                  const isLeader = bonusActive && !starter.isCut && !starter.isWD && !starter.isDQ && getLeaders().includes(starter.name.toLowerCase());
                                   const hasPenalty = starter.isCut || starter.isWD || starter.isDQ;
                                   const playerScore = parseInt(starter.score) || 0;
                                   return (
