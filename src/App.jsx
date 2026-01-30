@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set } from 'firebase/database';
+import { Analytics } from '@vercel/analytics/react';
 
 // Firebase Configuration
 const firebaseConfig = {
@@ -4019,6 +4020,7 @@ export default function HighlineFantasyGolf() {
           )}
         </main>
       </div>
+      <Analytics />
     </>
   );
 }
