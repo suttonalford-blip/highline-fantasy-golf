@@ -734,6 +734,16 @@ const styles = `
     font-weight: 500;
   }
 
+  .mc-penalty-badge {
+    padding: 4px 10px;
+    background: rgba(255, 71, 87, 0.15);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--accent-red);
+    font-weight: 500;
+  }
+
   .scoreboard-grid {
     display: grid;
     grid-template-columns: repeat(10, 1fr);
@@ -875,12 +885,8 @@ const styles = `
   }
 
   .bonus-indicator {
-    font-size: 9px;
-    padding: 1px 4px;
-    background: var(--accent-gold);
-    color: var(--bg-primary);
-    border-radius: 3px;
-    font-weight: 600;
+    font-size: 11px;
+    margin-left: 2px;
   }
 
   .scoreboard-player-score {
@@ -2415,6 +2421,26 @@ export default function HighlineFantasyGolf() {
     return leaderboard.filter(p => p.rank === 1).map(p => p.name.toLowerCase());
   };
 
+  // Check if cut has happened in the tournament
+  const hasCutHappened = () => {
+    const leaderboard = getLeaderboard();
+    return leaderboard.some(p => p.isCut || p.cutHasHappened);
+  };
+
+  // Get current projected MC penalty (worst weekend score among cut makers)
+  const getProjectedMCPenalty = () => {
+    const leaderboard = getLeaderboard();
+    const cutMakersWithWeekendScores = leaderboard.filter(p => p.madeCut && p.weekendScore !== null);
+    if (cutMakersWithWeekendScores.length === 0) return null;
+    return Math.max(...cutMakersWithWeekendScores.map(p => p.weekendScore));
+  };
+
+  // Check if tournament is still in progress (not finished)
+  const isTournamentInProgress = () => {
+    const currentRound = getCurrentRound();
+    return currentRound >= 1 && currentRound <= 4 && tournament?.status !== 'Final';
+  };
+
   // Calculate team scores based on rostered players and current leaderboard
   const calculateTeamStandings = () => {
     const leaderboard = getLeaderboard();
@@ -3041,6 +3067,11 @@ export default function HighlineFantasyGolf() {
                                 {bonusEnabled ? '✓' : '✗'} -10 Winner Bonus
                               </button>
                             )}
+                            {hasCutHappened() && isTournamentInProgress() && getProjectedMCPenalty() !== null && (
+                              <span className="mc-penalty-badge">
+                                Projected MC penalty: +{getProjectedMCPenalty()}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="scoreboard-grid">
@@ -3075,7 +3106,7 @@ export default function HighlineFantasyGolf() {
                                             {starter.name.split(' ').pop()}
                                             {starter.notInField && <span className="status-badge">N/A</span>}
                                             {hasPenalty && <span className="status-badge">{starter.isCut ? 'MC' : starter.isWD ? 'WD' : 'DQ'}</span>}
-                                            {isLeader && <span className="bonus-indicator">-10</span>}
+                                            {isLeader && <span className="bonus-indicator">⭐</span>}
                                           </span>
                                           <span className={`scoreboard-player-score ${playerScore < 0 ? 'under-par' : playerScore > 0 ? 'over-par' : ''}`}>
                                             {starter.score}
@@ -3354,6 +3385,11 @@ export default function HighlineFantasyGolf() {
                             {bonusEnabled ? '✓' : '✗'} -10 Winner Bonus
                           </button>
                         )}
+                        {hasCutHappened() && isTournamentInProgress() && getProjectedMCPenalty() !== null && (
+                          <span className="mc-penalty-badge">
+                            Projected MC penalty: +{getProjectedMCPenalty()}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="scoreboard-grid">
@@ -3385,7 +3421,7 @@ export default function HighlineFantasyGolf() {
                                         {starter.name.split(' ').pop()}
                                         {starter.isRental && <span className="rental-badge">R</span>}
                                         {hasPenalty && <span className="status-badge">{starter.isCut ? 'MC' : starter.isWD ? 'WD' : 'DQ'}</span>}
-                                        {isLeader && <span className="bonus-indicator">-10</span>}
+                                        {isLeader && <span className="bonus-indicator">⭐</span>}
                                       </span>
                                       <span className={`scoreboard-player-score ${playerScore < 0 ? 'under-par' : playerScore > 0 ? 'over-par' : ''}`}>
                                         {starter.score}
