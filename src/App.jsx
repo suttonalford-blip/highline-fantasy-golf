@@ -2347,18 +2347,31 @@ export default function HighlineFantasyGolf() {
       if (r3RelPar !== null || r4RelPar !== null) {
         weekendScore = (r3RelPar || 0) + (r4RelPar || 0);
       }
-      
+
       // Determine player status from ESPN data
       const statusType = player.status?.type?.name?.toLowerCase() || '';
       const statusDisplay = player.status?.displayValue || '';
-      
-      const isCut = statusType === 'cut' || statusDisplay === 'CUT' || statusDisplay.includes('CUT');
-      const isWD = statusType === 'wd' || statusDisplay === 'WD' || statusDisplay.includes('WD');
-      const isDQ = statusType === 'dq' || statusDisplay === 'DQ' || statusDisplay.includes('DQ');
-      const madeCut = !isCut && !isWD && !isDQ;
-      
+
+      // Check multiple ways ESPN might indicate a cut
+      const explicitCut = statusType === 'cut' ||
+                          statusType.includes('cut') ||
+                          statusDisplay === 'CUT' ||
+                          statusDisplay.includes('CUT') ||
+                          player.status?.type?.id === '3'; // ESPN cut status ID
+
+      // Also detect cut by absence of R3 score when tournament is in R3+
+      // If most players have R3 scores but this player doesn't, they likely missed cut
+      const hasR3Score = roundScores[2] !== null;
+
+      const isWD = statusType === 'wd' || statusType.includes('wd') || statusDisplay === 'WD' || statusDisplay.includes('WD');
+      const isDQ = statusType === 'dq' || statusType.includes('dq') || statusDisplay === 'DQ' || statusDisplay.includes('DQ');
+
+      // A player is cut if explicitly marked OR if they have no R3 score (will be refined below)
+      const isCut = explicitCut || false; // We'll set implicitCut in a second pass
+      const madeCut = !explicitCut && !isWD && !isDQ && hasR3Score;
+
       // Determine if cut has happened (player has R3 score or is marked as cut)
-      const cutHasHappened = r3Strokes !== null || isCut;
+      const cutHasHappened = r3Strokes !== null || explicitCut;
       
       return {
         rank: player.order || idx + 1,
@@ -2373,13 +2386,34 @@ export default function HighlineFantasyGolf() {
         country: player.athlete?.flag?.alt || '',
         statusType,
         statusDisplay,
-        isCut,
+        isCut: explicitCut, // Will be updated in second pass
         isWD,
         isDQ,
-        madeCut,
-        cutHasHappened
+        madeCut, // Will be updated in second pass
+        cutHasHappened,
+        hasR3Score
       };
     });
+
+    // Second pass: detect implicit cuts (players without R3 when most players have R3)
+    const playersWithR3 = players.filter(p => p.hasR3Score && !p.isWD && !p.isDQ);
+    const tournamentPastCut = playersWithR3.length > 10; // If >10 players have R3, cut has happened
+
+    if (tournamentPastCut) {
+      return players.map(p => {
+        // Player implicitly missed cut if they don't have R3 and aren't WD/DQ
+        const implicitCut = !p.hasR3Score && !p.isWD && !p.isDQ && !p.isCut;
+        const isCut = p.isCut || implicitCut;
+        const madeCut = !isCut && !p.isWD && !p.isDQ;
+        return {
+          ...p,
+          isCut,
+          madeCut
+        };
+      });
+    }
+
+    return players;
   };
 
   // Get starters for a team for current tournament (includes rentals)
