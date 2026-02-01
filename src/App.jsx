@@ -2323,25 +2323,23 @@ export default function HighlineFantasyGolf() {
       const linescores = player.linescores || [];
       const rounds = linescores.map(r => r.displayValue || '-');
       
-      // Parse individual round scores (strokes for that round, need to subtract par)
-      // ESPN gives us the display value like "68" and we need to compare to par (usually 72)
-      // But for weekend score calculation, we need relative to par
-      // The player.score is the total relative to par, so we can work backwards
-      const roundScores = linescores.map(r => {
-        // r.value is typically the stroke count, r.displayValue is the same as string
-        const val = parseInt(r.displayValue);
-        return !isNaN(val) ? val : null;
-      });
-      
-      // Get course par per round (usually 72, but we'll calculate from the data)
-      // For weekend score, we need R3 + R4 strokes relative to par
-      // We'll estimate par as 72 if not available
+      // Parse individual round scores
+      // ESPN displayValue can be either stroke count ("68") or relative to par ("-4")
+      // We detect which by checking the value range
       const coursePar = 72;
-      const r3Strokes = roundScores[2];
-      const r4Strokes = roundScores[3];
-      // Use != null to catch both null and undefined (player may not have R3/R4 if cut)
-      const r3RelPar = r3Strokes != null ? r3Strokes - coursePar : null;
-      const r4RelPar = r4Strokes != null ? r4Strokes - coursePar : null;
+      const roundScores = linescores.map(r => {
+        const val = parseInt(r.displayValue);
+        if (isNaN(val)) return null;
+        // If value is in stroke count range (60-90), convert to relative to par
+        // If value is in relative-to-par range (-20 to +20), use as-is
+        if (val >= 50 && val <= 100) {
+          return val - coursePar; // Convert stroke count to relative to par
+        }
+        return val; // Already relative to par
+      });
+
+      const r3RelPar = roundScores[2];
+      const r4RelPar = roundScores[3];
 
       // Weekend score = R3 + R4 relative to par
       let weekendScore = null;
@@ -2373,7 +2371,7 @@ export default function HighlineFantasyGolf() {
       const madeCut = !explicitCut && !isWD && !isDQ && hasR3Score;
 
       // Determine if cut has happened (player has R3 score or is marked as cut)
-      const cutHasHappened = r3Strokes != null || explicitCut;
+      const cutHasHappened = r3RelPar != null || explicitCut;
       
       return {
         rank: player.order || idx + 1,
