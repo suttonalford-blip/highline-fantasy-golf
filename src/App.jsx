@@ -2339,12 +2339,13 @@ export default function HighlineFantasyGolf() {
       const coursePar = 72;
       const r3Strokes = roundScores[2];
       const r4Strokes = roundScores[3];
-      const r3RelPar = r3Strokes !== null ? r3Strokes - coursePar : null;
-      const r4RelPar = r4Strokes !== null ? r4Strokes - coursePar : null;
-      
+      // Use != null to catch both null and undefined (player may not have R3/R4 if cut)
+      const r3RelPar = r3Strokes != null ? r3Strokes - coursePar : null;
+      const r4RelPar = r4Strokes != null ? r4Strokes - coursePar : null;
+
       // Weekend score = R3 + R4 relative to par
       let weekendScore = null;
-      if (r3RelPar !== null || r4RelPar !== null) {
+      if (r3RelPar != null || r4RelPar != null) {
         weekendScore = (r3RelPar || 0) + (r4RelPar || 0);
       }
 
@@ -2361,7 +2362,8 @@ export default function HighlineFantasyGolf() {
 
       // Also detect cut by absence of R3 score when tournament is in R3+
       // If most players have R3 scores but this player doesn't, they likely missed cut
-      const hasR3Score = roundScores[2] !== null;
+      // Use != null to catch both null and undefined
+      const hasR3Score = roundScores[2] != null;
 
       const isWD = statusType === 'wd' || statusType.includes('wd') || statusDisplay === 'WD' || statusDisplay.includes('WD');
       const isDQ = statusType === 'dq' || statusType.includes('dq') || statusDisplay === 'DQ' || statusDisplay.includes('DQ');
@@ -2371,7 +2373,7 @@ export default function HighlineFantasyGolf() {
       const madeCut = !explicitCut && !isWD && !isDQ && hasR3Score;
 
       // Determine if cut has happened (player has R3 score or is marked as cut)
-      const cutHasHappened = r3Strokes !== null || explicitCut;
+      const cutHasHappened = r3Strokes != null || explicitCut;
       
       return {
         rank: player.order || idx + 1,
