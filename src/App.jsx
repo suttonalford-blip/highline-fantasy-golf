@@ -70,6 +70,75 @@ const LEAGUE_CONFIG = {
   ]
 };
 
+// Determine which tournament to show by default based on today's date:
+// prefer a currently-live tournament, then the most recently completed one.
+const getDefaultTournamentId = () => {
+  const monthMap = {
+    'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
+    'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
+  };
+  const currentYear = LEAGUE_CONFIG.year || 2026;
+  const today = new Date();
+
+  const parseDates = (dateStr) => {
+    const crossMonthMatch = dateStr.match(/([A-Za-z]+)\s+(\d+)-([A-Za-z]+)\s+(\d+)/);
+    if (crossMonthMatch) {
+      const startMonth = monthMap[crossMonthMatch[1].toLowerCase().substring(0, 3)];
+      const startDay = parseInt(crossMonthMatch[2]);
+      const endMonth = monthMap[crossMonthMatch[3].toLowerCase().substring(0, 3)];
+      const endDay = parseInt(crossMonthMatch[4]);
+      if (startMonth === undefined || endMonth === undefined) return null;
+      return {
+        startDate: new Date(currentYear, startMonth, startDay),
+        endDate: new Date(currentYear, endMonth, endDay, 23, 59, 59)
+      };
+    }
+    const sameMonthMatch = dateStr.match(/([A-Za-z]+)\s+(\d+)-(\d+)/);
+    if (sameMonthMatch) {
+      const month = monthMap[sameMonthMatch[1].toLowerCase().substring(0, 3)];
+      const startDay = parseInt(sameMonthMatch[2]);
+      const endDay = parseInt(sameMonthMatch[3]);
+      if (month === undefined) return null;
+      return {
+        startDate: new Date(currentYear, month, startDay),
+        endDate: new Date(currentYear, month, endDay, 23, 59, 59)
+      };
+    }
+    return null;
+  };
+
+  const allTournaments = [
+    LEAGUE_CONFIG.preDraftTournament,
+    ...LEAGUE_CONFIG.season1Tournaments,
+    ...LEAGUE_CONFIG.season2Tournaments
+  ];
+
+  // If today falls within a tournament's dates, select it
+  for (const t of allTournaments) {
+    const dates = parseDates(t.dates);
+    if (dates && today >= dates.startDate && today <= dates.endDate) {
+      return t.id;
+    }
+  }
+
+  // Otherwise pick the most recently completed tournament
+  let mostRecentId = null;
+  let mostRecentEnd = null;
+  for (const t of allTournaments) {
+    const dates = parseDates(t.dates);
+    if (dates && today > dates.endDate) {
+      if (!mostRecentEnd || dates.endDate > mostRecentEnd) {
+        mostRecentId = t.id;
+        mostRecentEnd = dates.endDate;
+      }
+    }
+  }
+  if (mostRecentId) return mostRecentId;
+
+  // Nothing has started yet – fall back to the first tournament
+  return allTournaments[0].id;
+};
+
 // Commissioner password (in production, use proper auth)
 const COMMISSIONER_PASSWORD = "highline2026";
 
@@ -1781,7 +1850,7 @@ export default function HighlineFantasyGolf() {
   const [preDraftLineups, setPreDraftLineups] = useState({});
   
   // Live scoring tournament selection
-  const [liveTournamentId, setLiveTournamentId] = useState('predraft');
+  const [liveTournamentId, setLiveTournamentId] = useState(getDefaultTournamentId);
   const [rentalSearchQuery, setRentalSearchQuery] = useState('');
   const [selectedTeamForRental, setSelectedTeamForRental] = useState(1);
   const [preDraftSearchQuery, setPreDraftSearchQuery] = useState('');
