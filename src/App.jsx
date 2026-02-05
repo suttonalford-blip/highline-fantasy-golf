@@ -4,7 +4,7 @@ import { getDatabase, ref, onValue, set } from 'firebase/database';
 
 // Firebase Configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyD98XTU_SfFu9x4F5jqLDdne8_2hfH90qg",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "highline-fantasy-golf.firebaseapp.com",
   databaseURL: "https://highline-fantasy-golf-default-rtdb.firebaseio.com",
   projectId: "highline-fantasy-golf",
