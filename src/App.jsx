@@ -2401,7 +2401,10 @@ export default function HighlineFantasyGolf() {
       // ESPN displayValue can be either stroke count ("68") or relative to par ("-4")
       // We detect which by checking the value range
       const roundScores = linescores.map(r => {
-        const val = parseInt(r.displayValue);
+        const display = r.displayValue;
+        if (!display || display === '-') return null;
+        if (display === 'E') return 0; // Even par
+        const val = parseInt(display);
         if (isNaN(val)) return null;
         // If value is in stroke count range (60-90), convert to relative to par
         // If value is in relative-to-par range (-20 to +20), use as-is
@@ -2426,18 +2429,8 @@ export default function HighlineFantasyGolf() {
 
       // Check if ESPN explicitly marks this player as having missed the cut
       // Use exact matches to avoid false positives (e.g. "madecut" contains "cut")
-      // Note: we do NOT check status.type.id === 3 because ESPN may use that ID
-      // for non-cut statuses (e.g. "completed"). Rely on name/displayValue instead.
       const explicitCut = statusType === 'cut' ||
                           statusDisplay === 'CUT';
-
-      // Debug: log ESPN status for any player to help diagnose cut detection issues
-      if (player.athlete?.displayName) {
-        const name = player.athlete.displayName;
-        if (['Daniel Berger', 'Collin Morikawa', 'Nick Taylor'].includes(name) || explicitCut) {
-          console.log(`[CUT DEBUG] ${name}: statusType="${statusType}", statusDisplay="${statusDisplay}", typeId=${player.status?.type?.id}, explicitCut=${explicitCut}, linescores=${JSON.stringify((player.linescores || []).map(r => r.displayValue))}`);
-        }
-      }
 
       // Use != null to catch both null and undefined
       const hasR3Score = roundScores[2] != null;
