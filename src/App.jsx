@@ -2426,9 +2426,18 @@ export default function HighlineFantasyGolf() {
 
       // Check if ESPN explicitly marks this player as having missed the cut
       // Use exact matches to avoid false positives (e.g. "madecut" contains "cut")
+      // Note: we do NOT check status.type.id === 3 because ESPN may use that ID
+      // for non-cut statuses (e.g. "completed"). Rely on name/displayValue instead.
       const explicitCut = statusType === 'cut' ||
-                          statusDisplay === 'CUT' ||
-                          String(player.status?.type?.id) === '3'; // ESPN cut status ID
+                          statusDisplay === 'CUT';
+
+      // Debug: log ESPN status for any player to help diagnose cut detection issues
+      if (player.athlete?.displayName) {
+        const name = player.athlete.displayName;
+        if (['Daniel Berger', 'Collin Morikawa', 'Nick Taylor'].includes(name) || explicitCut) {
+          console.log(`[CUT DEBUG] ${name}: statusType="${statusType}", statusDisplay="${statusDisplay}", typeId=${player.status?.type?.id}, explicitCut=${explicitCut}, linescores=${JSON.stringify((player.linescores || []).map(r => r.displayValue))}`);
+        }
+      }
 
       // Use != null to catch both null and undefined
       const hasR3Score = roundScores[2] != null;
