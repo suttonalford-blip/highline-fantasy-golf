@@ -2388,7 +2388,7 @@ export default function HighlineFantasyGolf() {
   // Get leaderboard from ESPN data
   const getLeaderboard = () => {
     if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return [];
-    return espnData.events[0].competitions[0].competitors.map((player, idx) => {
+    const players = espnData.events[0].competitions[0].competitors.map((player, idx) => {
       const linescores = player.linescores || [];
       const rounds = linescores.map(r => r.displayValue || '-');
       
@@ -2425,7 +2425,7 @@ export default function HighlineFantasyGolf() {
                           statusType.includes('cut') ||
                           statusDisplay === 'CUT' ||
                           statusDisplay.includes('CUT') ||
-                          player.status?.type?.id === '3'; // ESPN cut status ID
+                          String(player.status?.type?.id) === '3'; // ESPN cut status ID
 
       // Also detect cut by absence of R3 score when tournament is in R3+
       // If most players have R3 scores but this player doesn't, they likely missed cut
