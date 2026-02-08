@@ -2388,14 +2388,18 @@ export default function HighlineFantasyGolf() {
   // Get leaderboard from ESPN data
   const getLeaderboard = () => {
     if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return [];
+
+    // Extract course par from ESPN data, fallback to 72
+    const competition = espnData.events[0].competitions?.[0];
+    const coursePar = competition?.courses?.[0]?.par || competition?.venue?.course?.par || 72;
+
     const players = espnData.events[0].competitions[0].competitors.map((player, idx) => {
       const linescores = player.linescores || [];
       const rounds = linescores.map(r => r.displayValue || '-');
-      
+
       // Parse individual round scores
       // ESPN displayValue can be either stroke count ("68") or relative to par ("-4")
       // We detect which by checking the value range
-      const coursePar = 72;
       const roundScores = linescores.map(r => {
         const val = parseInt(r.displayValue);
         if (isNaN(val)) return null;
@@ -2420,20 +2424,17 @@ export default function HighlineFantasyGolf() {
       const statusType = player.status?.type?.name?.toLowerCase() || '';
       const statusDisplay = player.status?.displayValue || '';
 
-      // Check multiple ways ESPN might indicate a cut
+      // Check if ESPN explicitly marks this player as having missed the cut
+      // Use exact matches to avoid false positives (e.g. "madecut" contains "cut")
       const explicitCut = statusType === 'cut' ||
-                          statusType.includes('cut') ||
                           statusDisplay === 'CUT' ||
-                          statusDisplay.includes('CUT') ||
                           String(player.status?.type?.id) === '3'; // ESPN cut status ID
 
-      // Also detect cut by absence of R3 score when tournament is in R3+
-      // If most players have R3 scores but this player doesn't, they likely missed cut
       // Use != null to catch both null and undefined
       const hasR3Score = roundScores[2] != null;
 
-      const isWD = statusType === 'wd' || statusType.includes('wd') || statusDisplay === 'WD' || statusDisplay.includes('WD');
-      const isDQ = statusType === 'dq' || statusType.includes('dq') || statusDisplay === 'DQ' || statusDisplay.includes('DQ');
+      const isWD = statusType === 'wd' || statusDisplay === 'WD';
+      const isDQ = statusType === 'dq' || statusDisplay === 'DQ';
 
       // A player is cut if explicitly marked OR if they have no R3 score (will be refined below)
       const isCut = explicitCut || false; // We'll set implicitCut in a second pass
@@ -2465,13 +2466,18 @@ export default function HighlineFantasyGolf() {
     });
 
     // Second pass: detect implicit cuts (players without R3 when most players have R3)
-    const playersWithR3 = players.filter(p => p.hasR3Score && !p.isWD && !p.isDQ);
-    const tournamentPastCut = playersWithR3.length > 10; // If >10 players have R3, cut has happened
+    const activePlayers = players.filter(p => !p.isWD && !p.isDQ && !p.isCut);
+    const playersWithR3 = activePlayers.filter(p => p.hasR3Score);
+    // Only consider implicit cuts when the majority of active players have R3 scores,
+    // meaning R3 is well underway and not just starting
+    const tournamentPastCut = playersWithR3.length > activePlayers.length / 2 && playersWithR3.length > 10;
 
     if (tournamentPastCut) {
       return players.map(p => {
-        // Player implicitly missed cut if they don't have R3 and aren't WD/DQ
-        const implicitCut = !p.hasR3Score && !p.isWD && !p.isDQ && !p.isCut;
+        // Player implicitly missed cut if they don't have R3, aren't WD/DQ,
+        // and their ESPN status indicates they are NOT actively competing
+        const isActive = p.statusType === 'active' || String(p.statusType).includes('active');
+        const implicitCut = !p.hasR3Score && !p.isWD && !p.isDQ && !p.isCut && !isActive;
         const isCut = p.isCut || implicitCut;
         const madeCut = !isCut && !p.isWD && !p.isDQ;
         return {
