@@ -1848,7 +1848,8 @@ export default function HighlineFantasyGolf() {
   const [tournamentResults, setTournamentResults] = useState({});
   const [rentals, setRentals] = useState({});
   const [preDraftLineups, setPreDraftLineups] = useState({});
-  
+  const [savedLeaderboards, setSavedLeaderboards] = useState({});
+
   // Live scoring tournament selection
   const [liveTournamentId, setLiveTournamentId] = useState(getDefaultTournamentId);
   const [rentalSearchQuery, setRentalSearchQuery] = useState('');
@@ -1856,6 +1857,12 @@ export default function HighlineFantasyGolf() {
   const [preDraftSearchQuery, setPreDraftSearchQuery] = useState('');
   const [selectedTeamForPreDraft, setSelectedTeamForPreDraft] = useState(1);
   const [bonusEnabled, setBonusEnabled] = useState(true); // Toggle for -10 winner bonus
+
+  // Manual score entry state
+  const [manualScoreEntries, setManualScoreEntries] = useState([]);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualEntrySearch, setManualEntrySearch] = useState('');
+  const [manualCoursePar, setManualCoursePar] = useState(72);
 
   // Get all tournaments with status
   const getAllTournaments = () => {
@@ -2000,6 +2007,7 @@ export default function HighlineFantasyGolf() {
     const resultsRef = ref(database, 'tournamentResults');
     const rentalsRef = ref(database, 'rentals');
     const preDraftRef = ref(database, 'preDraftLineups');
+    const savedLeaderboardsRef = ref(database, 'savedLeaderboards');
 
     const unsubscribeRosters = onValue(rostersRef, (snapshot) => {
       const data = snapshot.val();
@@ -2038,6 +2046,13 @@ export default function HighlineFantasyGolf() {
       }
     });
 
+    const unsubscribeSavedLeaderboards = onValue(savedLeaderboardsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setSavedLeaderboards(data);
+      }
+    });
+
     // Cleanup listeners on unmount
     return () => {
       unsubscribeRosters();
@@ -2045,6 +2060,7 @@ export default function HighlineFantasyGolf() {
       unsubscribeResults();
       unsubscribeRentals();
       unsubscribePreDraft();
+      unsubscribeSavedLeaderboards();
     };
   }, []);
 
@@ -2069,9 +2085,166 @@ export default function HighlineFantasyGolf() {
     set(ref(database, 'tournamentResults'), newResults);
   };
 
+  // Save the full ESPN leaderboard data for a tournament so it can be viewed after the tournament ends
+  const saveTournamentLeaderboard = (tournamentId, espnEventData) => {
+    if (!tournamentId || !espnEventData) return;
+    const newSavedLeaderboards = { ...savedLeaderboards, [tournamentId]: espnEventData };
+    setSavedLeaderboards(newSavedLeaderboards);
+    set(ref(database, `savedLeaderboards/${tournamentId}`), espnEventData);
+    console.log(`Saved leaderboard data for tournament ${tournamentId}`);
+  };
+
   const saveRentals = (newRentals) => {
     setRentals(newRentals);
     set(ref(database, 'rentals'), newRentals);
+  };
+
+  // Initialize manual score entries from existing lineup players for a tournament
+  const initManualScoreEntries = (tournamentId) => {
+    // Gather all unique player names from lineups and rentals for this tournament
+    const playerNames = new Set();
+    LEAGUE_CONFIG.teams.forEach(team => {
+      const starters = getTeamStarters(team.id, tournamentId);
+      starters.forEach(name => playerNames.add(name));
+    });
+
+    // If we have saved leaderboard data, pre-populate from it
+    const saved = savedLeaderboards[tournamentId];
+    if (saved?.events?.[0]?.competitions?.[0]?.competitors) {
+      const competitors = saved.events[0].competitions[0].competitors;
+      const par = saved.events[0].competitions[0]?.courses?.[0]?.par || 72;
+      setManualCoursePar(par);
+
+      const entries = competitors.map(c => {
+        const rounds = (c.linescores || []).map(r => r.displayValue || '');
+        return {
+          name: c.athlete?.displayName || 'Unknown',
+          score: String(c.score ?? '0'),
+          r1: rounds[0] || '',
+          r2: rounds[1] || '',
+          r3: rounds[2] || '',
+          r4: rounds[3] || '',
+          status: c.status?.type?.name?.toLowerCase() === 'cut' ? 'MC' :
+                  c.status?.type?.name?.toLowerCase() === 'wd' ? 'WD' :
+                  c.status?.type?.name?.toLowerCase() === 'dq' ? 'DQ' : 'Active',
+          rank: c.order || 0
+        };
+      });
+
+      // Add any lineup players not in the saved data
+      playerNames.forEach(name => {
+        if (!entries.find(e => e.name.toLowerCase() === name.toLowerCase())) {
+          entries.push({ name, score: '0', r1: '', r2: '', r3: '', r4: '', status: 'Active', rank: 0 });
+        }
+      });
+
+      setManualScoreEntries(entries);
+    } else {
+      // No saved data - create blank entries from lineup players
+      setManualCoursePar(72);
+      const entries = Array.from(playerNames).map(name => ({
+        name, score: '0', r1: '', r2: '', r3: '', r4: '', status: 'Active', rank: 0
+      }));
+      setManualScoreEntries(entries);
+    }
+  };
+
+  // Build ESPN-compatible data structure from manual entries and save
+  const saveManualScores = (tournamentId) => {
+    // Sort entries by score (ascending, lower is better) and assign ranks
+    const sorted = [...manualScoreEntries]
+      .filter(e => e.name.trim())
+      .sort((a, b) => {
+        const aScore = parseFloat(a.score) || 0;
+        const bScore = parseFloat(b.score) || 0;
+        return aScore - bScore;
+      });
+
+    // Assign ranks with ties
+    let currentRank = 1;
+    sorted.forEach((entry, idx) => {
+      if (idx > 0 && (parseFloat(entry.score) || 0) !== (parseFloat(sorted[idx - 1].score) || 0)) {
+        currentRank = idx + 1;
+      }
+      entry.rank = currentRank;
+    });
+
+    // Find the tournament config for the name
+    const allTournaments = [
+      LEAGUE_CONFIG.preDraftTournament,
+      ...LEAGUE_CONFIG.season1Tournaments,
+      ...LEAGUE_CONFIG.season2Tournaments
+    ];
+    const tourneyConfig = allTournaments.find(t => t.id === tournamentId);
+
+    // Build ESPN-compatible structure
+    const espnCompatible = {
+      events: [{
+        name: tourneyConfig?.name || 'Unknown Tournament',
+        date: new Date().toISOString(),
+        endDate: new Date().toISOString(),
+        status: { type: { state: 'post', description: 'Final' } },
+        competitions: [{
+          venue: { fullName: '', shortName: '' },
+          courses: [{ par: manualCoursePar }],
+          competitors: sorted.map((entry, idx) => {
+            const scoreNum = parseFloat(entry.score) || 0;
+            const scoreStr = scoreNum === 0 ? '0' : String(scoreNum);
+
+            // Build linescores - convert round entries to the format getLeaderboard expects
+            const roundValues = [entry.r1, entry.r2, entry.r3, entry.r4];
+            const linescores = roundValues.map(r => ({
+              displayValue: r || '-'
+            }));
+
+            const statusMap = {
+              'MC': { type: { name: 'cut', state: 'post' }, displayValue: 'CUT', thru: 'F' },
+              'WD': { type: { name: 'wd', state: 'post' }, displayValue: 'WD', thru: '' },
+              'DQ': { type: { name: 'dq', state: 'post' }, displayValue: 'DQ', thru: '' },
+              'Active': { type: { name: 'active', state: 'post' }, displayValue: 'F', thru: 'F' }
+            };
+
+            return {
+              id: `manual-${idx}`,
+              order: entry.rank,
+              athlete: { displayName: entry.name, flag: { alt: '' } },
+              score: scoreStr,
+              linescores,
+              status: statusMap[entry.status] || statusMap['Active']
+            };
+          })
+        }]
+      }]
+    };
+
+    saveTournamentLeaderboard(tournamentId, espnCompatible);
+    showMessage(`Saved manual scores for ${tourneyConfig?.name || tournamentId}`, 'success');
+    setShowManualEntry(false);
+  };
+
+  // Update a single manual score entry field
+  const updateManualEntry = (index, field, value) => {
+    const updated = [...manualScoreEntries];
+    updated[index] = { ...updated[index], [field]: value };
+    setManualScoreEntries(updated);
+  };
+
+  // Add a new blank player to manual entries
+  const addManualEntryPlayer = (playerName) => {
+    if (!playerName.trim()) return;
+    if (manualScoreEntries.find(e => e.name.toLowerCase() === playerName.toLowerCase())) {
+      showMessage('Player already in the list', 'error');
+      return;
+    }
+    setManualScoreEntries([...manualScoreEntries, {
+      name: playerName, score: '0', r1: '', r2: '', r3: '', r4: '', status: 'Active', rank: 0
+    }]);
+    setManualEntrySearch('');
+  };
+
+  // Remove a player from manual entries
+  const removeManualEntry = (index) => {
+    setManualScoreEntries(manualScoreEntries.filter((_, i) => i !== index));
   };
 
   // Add rental player to lineup
@@ -2325,6 +2498,36 @@ export default function HighlineFantasyGolf() {
     return () => clearInterval(interval);
   }, [refreshData]);
 
+  // Auto-save leaderboard data when ESPN shows a tournament as complete ("post")
+  useEffect(() => {
+    if (!espnData?.events?.[0]) return;
+    const espnEvent = espnData.events[0];
+    const espnState = espnEvent?.status?.type?.state || '';
+
+    // Only auto-save when tournament is complete
+    if (espnState !== 'post') return;
+
+    // Match the ESPN event to one of our configured tournaments by name
+    const espnEventName = espnEvent?.name?.toLowerCase() || '';
+    const allTournaments = [
+      LEAGUE_CONFIG.preDraftTournament,
+      ...LEAGUE_CONFIG.season1Tournaments,
+      ...LEAGUE_CONFIG.season2Tournaments
+    ];
+
+    const matchedTournament = allTournaments.find(t => {
+      const keywords = t.name.toLowerCase().split(' ').filter(w => w.length > 3);
+      return keywords.some(keyword => espnEventName.includes(keyword)) ||
+             espnEventName.split(' ').filter(w => w.length > 3).some(keyword =>
+               t.name.toLowerCase().includes(keyword));
+    });
+
+    if (matchedTournament && !savedLeaderboards[matchedTournament.id]) {
+      console.log(`Auto-saving leaderboard for completed tournament: ${matchedTournament.name}`);
+      saveTournamentLeaderboard(matchedTournament.id, espnData);
+    }
+  }, [espnData, savedLeaderboards]);
+
   // Commissioner login
   const handleCommissionerLogin = () => {
     if (passwordInput === COMMISSIONER_PASSWORD) {
@@ -2342,10 +2545,23 @@ export default function HighlineFantasyGolf() {
     setTimeout(() => setMessage(null), 3000);
   };
 
+  // Get the ESPN event data for the currently selected tournament.
+  // Uses saved leaderboard data for past tournaments, or live ESPN data for the current one.
+  const getESPNDataForTournament = () => {
+    // Check if we have saved leaderboard data for the selected tournament
+    const saved = savedLeaderboards[liveTournamentId];
+    if (saved) {
+      return saved;
+    }
+    // Fall back to live ESPN data
+    return espnData;
+  };
+
   // Get current tournament info
   const getCurrentTournament = () => {
-    if (!espnData?.events?.[0]) return null;
-    const event = espnData.events[0];
+    const dataSource = getESPNDataForTournament();
+    if (!dataSource?.events?.[0]) return null;
+    const event = dataSource.events[0];
     const competition = event.competitions?.[0];
     const venue = competition?.venue;
 
@@ -2368,8 +2584,9 @@ export default function HighlineFantasyGolf() {
 
   // Get current round number based on top players' progress
   const getCurrentRound = () => {
-    if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return 0;
-    const competitors = espnData.events[0].competitions[0].competitors;
+    const dataSource = getESPNDataForTournament();
+    if (!dataSource?.events?.[0]?.competitions?.[0]?.competitors) return 0;
+    const competitors = dataSource.events[0].competitions[0].competitors;
     const topPlayers = competitors.slice(0, 10);
     const roundsCompleted = topPlayers.map(p => {
       const linescores = p.linescores || [];
@@ -2385,15 +2602,16 @@ export default function HighlineFantasyGolf() {
     return 4;
   };
 
-  // Get leaderboard from ESPN data
+  // Get leaderboard from ESPN data (or saved data for past tournaments)
   const getLeaderboard = () => {
-    if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return [];
+    const dataSource = getESPNDataForTournament();
+    if (!dataSource?.events?.[0]?.competitions?.[0]?.competitors) return [];
 
-    // Extract course par from ESPN data, fallback to 72
-    const competition = espnData.events[0].competitions?.[0];
+    // Extract course par from data source, fallback to 72
+    const competition = dataSource.events[0].competitions?.[0];
     const coursePar = competition?.courses?.[0]?.par || competition?.venue?.course?.par || 72;
 
-    const players = espnData.events[0].competitions[0].competitors.map((player, idx) => {
+    const players = dataSource.events[0].competitions[0].competitors.map((player, idx) => {
       const linescores = player.linescores || [];
       const rounds = linescores.map(r => r.displayValue || '-');
 
@@ -2510,8 +2728,9 @@ export default function HighlineFantasyGolf() {
 
   // Check if Round 2 is complete (for winner bonus eligibility)
   const isRound3OrLater = () => {
-    if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return false;
-    const competitors = espnData.events[0].competitions[0].competitors;
+    const dataSource = getESPNDataForTournament();
+    if (!dataSource?.events?.[0]?.competitions?.[0]?.competitors) return false;
+    const competitors = dataSource.events[0].competitions[0].competitors;
     // Check if the majority of players have completed at least 2 rounds
     // We look at the leader or top players to determine the current round
     const topPlayers = competitors.slice(0, 10);
@@ -2849,10 +3068,10 @@ export default function HighlineFantasyGolf() {
           </nav>
 
           <div className="header-right">
-            {espnData && (
+            {(espnData || savedLeaderboards[liveTournamentId]) && (
               <div className="live-indicator">
                 <div className="live-dot"></div>
-                Live Data
+                {savedLeaderboards[liveTournamentId] ? 'Saved Data' : 'Live Data'}
               </div>
             )}
             {isCommissioner ? (
@@ -2884,7 +3103,7 @@ export default function HighlineFantasyGolf() {
                     <select 
                       className="tournament-dropdown"
                       value={liveTournamentId}
-                      onChange={e => setLiveTournamentId(e.target.value)}
+                      onChange={e => { setLiveTournamentId(e.target.value); setShowManualEntry(false); }}
                     >
                       <optgroup label="Pre-Draft">
                         {getAllTournaments().filter(t => t.season === 0).map(t => (
@@ -3459,19 +3678,234 @@ export default function HighlineFantasyGolf() {
                   );
                 }
 
-                if (tourneyStatus === 'final') {
-                  const results = tournamentResults[liveTournamentId];
-                  if (results) {
+                if (tourneyStatus === 'final' || showManualEntry) {
+                  const hasSavedLeaderboard = !!savedLeaderboards[liveTournamentId];
+
+                  // Show manual entry form if commissioner triggered it
+                  if (showManualEntry && isCommissioner) {
                     return (
-                      <div className="final-results">
-                        <h2>🏆 Final Results: {selectedTourneyConfig?.name}</h2>
-                        {/* Show saved results */}
-                        <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>
-                          Results have been finalized for this tournament.
-                        </p>
+                      <div className="manual-entry-panel">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                          <h2>📝 Manual Score Entry: {selectedTourneyConfig?.name}</h2>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              className="btn"
+                              onClick={() => saveManualScores(liveTournamentId)}
+                            >
+                              Save Scores
+                            </button>
+                            <button
+                              className="btn"
+                              style={{ background: 'var(--accent-red)' }}
+                              onClick={() => setShowManualEntry(false)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Course par setting */}
+                        <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <label style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Course Par:</label>
+                          <input
+                            type="number"
+                            className="form-input"
+                            style={{ width: '80px' }}
+                            value={manualCoursePar}
+                            onChange={e => setManualCoursePar(parseInt(e.target.value) || 72)}
+                          />
+                          <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                            (Used to convert stroke counts to relative-to-par)
+                          </span>
+                        </div>
+
+                        {/* Add player search */}
+                        <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                          <label style={{ color: 'var(--text-secondary)', fontWeight: 500, display: 'block', marginBottom: '8px' }}>
+                            Add Player
+                          </label>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                              type="text"
+                              className="form-input"
+                              style={{ flex: 1 }}
+                              placeholder="Search player name..."
+                              value={manualEntrySearch}
+                              onChange={e => setManualEntrySearch(e.target.value)}
+                            />
+                          </div>
+                          {manualEntrySearch.length >= 2 && (
+                            <div style={{ marginTop: '8px', maxHeight: '150px', overflowY: 'auto' }}>
+                              {PGA_PLAYERS
+                                .filter(p => p.name.toLowerCase().includes(manualEntrySearch.toLowerCase()))
+                                .slice(0, 8)
+                                .map(player => (
+                                  <div
+                                    key={player.name}
+                                    style={{
+                                      padding: '6px 12px',
+                                      cursor: 'pointer',
+                                      borderRadius: '4px',
+                                      fontSize: '14px',
+                                      color: manualScoreEntries.find(e => e.name.toLowerCase() === player.name.toLowerCase())
+                                        ? 'var(--text-muted)' : 'var(--text-primary)',
+                                      background: 'transparent'
+                                    }}
+                                    onClick={() => addManualEntryPlayer(player.name)}
+                                    onMouseOver={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    {player.name} {player.rank ? `(#${player.rank})` : ''}
+                                    {manualScoreEntries.find(e => e.name.toLowerCase() === player.name.toLowerCase()) && ' (already added)'}
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Score entry table */}
+                        <div style={{ overflowX: 'auto' }}>
+                          <table className="leaderboard-table" style={{ minWidth: '700px' }}>
+                            <thead>
+                              <tr>
+                                <th style={{ width: '30px' }}>#</th>
+                                <th>Player</th>
+                                <th style={{ width: '80px' }}>Total</th>
+                                <th style={{ width: '65px' }}>R1</th>
+                                <th style={{ width: '65px' }}>R2</th>
+                                <th style={{ width: '65px' }}>R3</th>
+                                <th style={{ width: '65px' }}>R4</th>
+                                <th style={{ width: '90px' }}>Status</th>
+                                <th style={{ width: '40px' }}></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {manualScoreEntries.map((entry, idx) => {
+                                const isOnLineup = LEAGUE_CONFIG.teams.some(team => {
+                                  const starters = getTeamStarters(team.id, liveTournamentId);
+                                  return starters.some(s => s.toLowerCase() === entry.name.toLowerCase());
+                                });
+                                return (
+                                  <tr key={idx} style={isOnLineup ? { background: 'rgba(0, 255, 135, 0.05)' } : {}}>
+                                    <td className="rank">{idx + 1}</td>
+                                    <td>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ fontWeight: isOnLineup ? 600 : 400 }}>{entry.name}</span>
+                                        {isOnLineup && <span style={{ fontSize: '10px', color: 'var(--accent-green)', fontWeight: 600 }}>LINEUP</span>}
+                                      </div>
+                                    </td>
+                                    <td>
+                                      <input
+                                        type="text"
+                                        className="form-input"
+                                        style={{ width: '70px', padding: '4px 8px', fontSize: '13px', textAlign: 'center', fontFamily: 'JetBrains Mono' }}
+                                        value={entry.score}
+                                        onChange={e => updateManualEntry(idx, 'score', e.target.value)}
+                                        placeholder="0"
+                                      />
+                                    </td>
+                                    {['r1', 'r2', 'r3', 'r4'].map(round => (
+                                      <td key={round}>
+                                        <input
+                                          type="text"
+                                          className="form-input"
+                                          style={{ width: '55px', padding: '4px 8px', fontSize: '13px', textAlign: 'center', fontFamily: 'JetBrains Mono' }}
+                                          value={entry[round]}
+                                          onChange={e => updateManualEntry(idx, round, e.target.value)}
+                                          placeholder="-"
+                                        />
+                                      </td>
+                                    ))}
+                                    <td>
+                                      <select
+                                        className="form-select"
+                                        style={{ padding: '4px 6px', fontSize: '12px', minWidth: '80px' }}
+                                        value={entry.status}
+                                        onChange={e => updateManualEntry(idx, 'status', e.target.value)}
+                                      >
+                                        <option value="Active">Active</option>
+                                        <option value="MC">MC</option>
+                                        <option value="WD">WD</option>
+                                        <option value="DQ">DQ</option>
+                                      </select>
+                                    </td>
+                                    <td>
+                                      <button
+                                        style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', fontSize: '16px', padding: '4px' }}
+                                        onClick={() => removeManualEntry(idx)}
+                                        title="Remove player"
+                                      >
+                                        ×
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                            {manualScoreEntries.length} players • Enter total scores relative to par (e.g. -5, 3, 0) • Round scores can be stroke counts (68) or relative to par (-4)
+                          </span>
+                          <button
+                            className="btn"
+                            onClick={() => saveManualScores(liveTournamentId)}
+                          >
+                            Save Scores
+                          </button>
+                        </div>
                       </div>
                     );
                   }
+
+                  if (!hasSavedLeaderboard) {
+                    // No saved data - show message with options
+                    return (
+                      <div className="final-results">
+                        <h2>🏆 Final Results: {selectedTourneyConfig?.name}</h2>
+                        <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>
+                          No saved leaderboard data available for this tournament.
+                        </p>
+                        {isCommissioner && (
+                          <>
+                            <p style={{ color: 'var(--accent-orange)', marginTop: '8px', fontSize: '14px' }}>
+                              Commissioner: Save ESPN data if available, or manually enter scores.
+                            </p>
+                            <div style={{ display: 'flex', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
+                              {espnData?.events?.[0] && (
+                                <button
+                                  className="btn"
+                                  onClick={() => {
+                                    saveTournamentLeaderboard(liveTournamentId, espnData);
+                                    showMessage(`Saved ESPN leaderboard data for ${selectedTourneyConfig?.name}`, 'success');
+                                  }}
+                                >
+                                  Save Current ESPN Data
+                                </button>
+                              )}
+                              <button
+                                className="btn"
+                                style={{ background: 'var(--accent-orange)' }}
+                                onClick={() => {
+                                  initManualScoreEntries(liveTournamentId);
+                                  setShowManualEntry(true);
+                                }}
+                              >
+                                Enter Scores Manually
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  if (!hasSavedLeaderboard) {
+                    return null;
+                  }
+                  // Has saved leaderboard data - fall through to show full scoreboard below
                 }
 
                 // Live tournament - show normal scoreboard
@@ -3654,6 +4088,70 @@ export default function HighlineFantasyGolf() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Commissioner: Save/Finalize Tournament button */}
+                  {isCommissioner && !savedLeaderboards[liveTournamentId] && (
+                    <div style={{ marginTop: '24px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--accent-orange)', marginBottom: '4px' }}>
+                            Commissioner: Save Tournament Scores
+                          </div>
+                          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                            Saves the current leaderboard so scores are preserved after the tournament ends.
+                          </div>
+                        </div>
+                        <button
+                          className="btn"
+                          style={{ whiteSpace: 'nowrap' }}
+                          onClick={() => {
+                            const dataToSave = getESPNDataForTournament();
+                            if (dataToSave?.events?.[0]) {
+                              saveTournamentLeaderboard(liveTournamentId, dataToSave);
+                              showMessage(`Saved leaderboard data for ${selectedTourneyConfig?.name}`, 'success');
+                            } else {
+                              showMessage('No leaderboard data available to save', 'error');
+                            }
+                          }}
+                        >
+                          Save Scores
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Indicator when viewing saved data */}
+                  {savedLeaderboards[liveTournamentId] && (
+                    <div style={{ marginTop: '16px', padding: '12px 16px', background: 'rgba(0, 255, 135, 0.08)', borderRadius: '8px', border: '1px solid rgba(0, 255, 135, 0.2)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ color: 'var(--accent-green)' }}>Viewing saved tournament results</span>
+                      {isCommissioner && (
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn btn-sm"
+                            style={{ fontSize: '12px' }}
+                            onClick={() => {
+                              if (espnData?.events?.[0]) {
+                                saveTournamentLeaderboard(liveTournamentId, espnData);
+                                showMessage(`Updated saved data with current ESPN feed`, 'success');
+                              }
+                            }}
+                          >
+                            Re-save from ESPN
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            style={{ fontSize: '12px', background: 'var(--accent-orange)' }}
+                            onClick={() => {
+                              initManualScoreEntries(liveTournamentId);
+                              setShowManualEntry(true);
+                            }}
+                          >
+                            Edit Scores
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   </>
                 );
               })()}
