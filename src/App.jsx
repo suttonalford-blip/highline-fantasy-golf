@@ -2085,13 +2085,69 @@ export default function HighlineFantasyGolf() {
     set(ref(database, 'tournamentResults'), newResults);
   };
 
-  // Save the full ESPN leaderboard data for a tournament so it can be viewed after the tournament ends
+  // Save the full ESPN leaderboard data for a tournament so it can be viewed after the tournament ends.
+  // Strips the data down to only the fields getLeaderboard()/getCurrentTournament() need,
+  // which also avoids Firebase-illegal keys like $ref that appear in raw ESPN responses.
   const saveTournamentLeaderboard = (tournamentId, espnEventData) => {
     if (!tournamentId || !espnEventData) return;
-    const newSavedLeaderboards = { ...savedLeaderboards, [tournamentId]: espnEventData };
+
+    // Extract only the fields we actually consume
+    const event = espnEventData.events?.[0];
+    if (!event) return;
+
+    const competition = event.competitions?.[0];
+    const competitors = competition?.competitors || [];
+
+    const cleanData = {
+      events: [{
+        name: event.name || '',
+        date: event.date || '',
+        endDate: event.endDate || '',
+        status: {
+          type: {
+            state: event.status?.type?.state || 'post',
+            description: event.status?.type?.description || 'Final'
+          }
+        },
+        competitions: [{
+          venue: {
+            fullName: competition?.venue?.fullName || '',
+            shortName: competition?.venue?.shortName || '',
+            address: { city: competition?.venue?.address?.city || '' },
+            course: { par: competition?.venue?.course?.par || null }
+          },
+          courses: [{ par: competition?.courses?.[0]?.par || 72 }],
+          cutLine: { score: competition?.cutLine?.score || null },
+          projectedCutLine: { score: competition?.projectedCutLine?.score || null },
+          competitors: competitors.map(c => ({
+            id: c.id || '',
+            order: c.order || 0,
+            score: c.score ?? '0',
+            athlete: {
+              displayName: c.athlete?.displayName || 'Unknown',
+              flag: { alt: c.athlete?.flag?.alt || '' }
+            },
+            linescores: (c.linescores || []).map(r => ({
+              displayValue: r.displayValue || '-'
+            })),
+            status: {
+              type: {
+                name: c.status?.type?.name || '',
+                state: c.status?.type?.state || ''
+              },
+              displayValue: c.status?.displayValue || '',
+              thru: c.status?.thru || ''
+            }
+          }))
+        }]
+      }]
+    };
+
+    const newSavedLeaderboards = { ...savedLeaderboards, [tournamentId]: cleanData };
     setSavedLeaderboards(newSavedLeaderboards);
-    set(ref(database, `savedLeaderboards/${tournamentId}`), espnEventData);
-    console.log(`Saved leaderboard data for tournament ${tournamentId}`);
+    set(ref(database, `savedLeaderboards/${tournamentId}`), cleanData)
+      .then(() => console.log(`Saved leaderboard data for tournament ${tournamentId}`))
+      .catch(err => console.error(`Failed to save leaderboard for ${tournamentId}:`, err));
   };
 
   const saveRentals = (newRentals) => {
