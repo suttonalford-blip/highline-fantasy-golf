@@ -1848,7 +1848,8 @@ export default function HighlineFantasyGolf() {
   const [tournamentResults, setTournamentResults] = useState({});
   const [rentals, setRentals] = useState({});
   const [preDraftLineups, setPreDraftLineups] = useState({});
-  
+  const [savedLeaderboards, setSavedLeaderboards] = useState({});
+
   // Live scoring tournament selection
   const [liveTournamentId, setLiveTournamentId] = useState(getDefaultTournamentId);
   const [rentalSearchQuery, setRentalSearchQuery] = useState('');
@@ -2000,6 +2001,7 @@ export default function HighlineFantasyGolf() {
     const resultsRef = ref(database, 'tournamentResults');
     const rentalsRef = ref(database, 'rentals');
     const preDraftRef = ref(database, 'preDraftLineups');
+    const savedLeaderboardsRef = ref(database, 'savedLeaderboards');
 
     const unsubscribeRosters = onValue(rostersRef, (snapshot) => {
       const data = snapshot.val();
@@ -2038,6 +2040,13 @@ export default function HighlineFantasyGolf() {
       }
     });
 
+    const unsubscribeSavedLeaderboards = onValue(savedLeaderboardsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setSavedLeaderboards(data);
+      }
+    });
+
     // Cleanup listeners on unmount
     return () => {
       unsubscribeRosters();
@@ -2045,6 +2054,7 @@ export default function HighlineFantasyGolf() {
       unsubscribeResults();
       unsubscribeRentals();
       unsubscribePreDraft();
+      unsubscribeSavedLeaderboards();
     };
   }, []);
 
@@ -2067,6 +2077,15 @@ export default function HighlineFantasyGolf() {
   const saveTournamentResults = (newResults) => {
     setTournamentResults(newResults);
     set(ref(database, 'tournamentResults'), newResults);
+  };
+
+  // Save the full ESPN leaderboard data for a tournament so it can be viewed after the tournament ends
+  const saveTournamentLeaderboard = (tournamentId, espnEventData) => {
+    if (!tournamentId || !espnEventData) return;
+    const newSavedLeaderboards = { ...savedLeaderboards, [tournamentId]: espnEventData };
+    setSavedLeaderboards(newSavedLeaderboards);
+    set(ref(database, `savedLeaderboards/${tournamentId}`), espnEventData);
+    console.log(`Saved leaderboard data for tournament ${tournamentId}`);
   };
 
   const saveRentals = (newRentals) => {
@@ -2325,6 +2344,36 @@ export default function HighlineFantasyGolf() {
     return () => clearInterval(interval);
   }, [refreshData]);
 
+  // Auto-save leaderboard data when ESPN shows a tournament as complete ("post")
+  useEffect(() => {
+    if (!espnData?.events?.[0]) return;
+    const espnEvent = espnData.events[0];
+    const espnState = espnEvent?.status?.type?.state || '';
+
+    // Only auto-save when tournament is complete
+    if (espnState !== 'post') return;
+
+    // Match the ESPN event to one of our configured tournaments by name
+    const espnEventName = espnEvent?.name?.toLowerCase() || '';
+    const allTournaments = [
+      LEAGUE_CONFIG.preDraftTournament,
+      ...LEAGUE_CONFIG.season1Tournaments,
+      ...LEAGUE_CONFIG.season2Tournaments
+    ];
+
+    const matchedTournament = allTournaments.find(t => {
+      const keywords = t.name.toLowerCase().split(' ').filter(w => w.length > 3);
+      return keywords.some(keyword => espnEventName.includes(keyword)) ||
+             espnEventName.split(' ').filter(w => w.length > 3).some(keyword =>
+               t.name.toLowerCase().includes(keyword));
+    });
+
+    if (matchedTournament && !savedLeaderboards[matchedTournament.id]) {
+      console.log(`Auto-saving leaderboard for completed tournament: ${matchedTournament.name}`);
+      saveTournamentLeaderboard(matchedTournament.id, espnData);
+    }
+  }, [espnData, savedLeaderboards]);
+
   // Commissioner login
   const handleCommissionerLogin = () => {
     if (passwordInput === COMMISSIONER_PASSWORD) {
@@ -2342,10 +2391,23 @@ export default function HighlineFantasyGolf() {
     setTimeout(() => setMessage(null), 3000);
   };
 
+  // Get the ESPN event data for the currently selected tournament.
+  // Uses saved leaderboard data for past tournaments, or live ESPN data for the current one.
+  const getESPNDataForTournament = () => {
+    // Check if we have saved leaderboard data for the selected tournament
+    const saved = savedLeaderboards[liveTournamentId];
+    if (saved) {
+      return saved;
+    }
+    // Fall back to live ESPN data
+    return espnData;
+  };
+
   // Get current tournament info
   const getCurrentTournament = () => {
-    if (!espnData?.events?.[0]) return null;
-    const event = espnData.events[0];
+    const dataSource = getESPNDataForTournament();
+    if (!dataSource?.events?.[0]) return null;
+    const event = dataSource.events[0];
     const competition = event.competitions?.[0];
     const venue = competition?.venue;
 
@@ -2368,8 +2430,9 @@ export default function HighlineFantasyGolf() {
 
   // Get current round number based on top players' progress
   const getCurrentRound = () => {
-    if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return 0;
-    const competitors = espnData.events[0].competitions[0].competitors;
+    const dataSource = getESPNDataForTournament();
+    if (!dataSource?.events?.[0]?.competitions?.[0]?.competitors) return 0;
+    const competitors = dataSource.events[0].competitions[0].competitors;
     const topPlayers = competitors.slice(0, 10);
     const roundsCompleted = topPlayers.map(p => {
       const linescores = p.linescores || [];
@@ -2385,15 +2448,16 @@ export default function HighlineFantasyGolf() {
     return 4;
   };
 
-  // Get leaderboard from ESPN data
+  // Get leaderboard from ESPN data (or saved data for past tournaments)
   const getLeaderboard = () => {
-    if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return [];
+    const dataSource = getESPNDataForTournament();
+    if (!dataSource?.events?.[0]?.competitions?.[0]?.competitors) return [];
 
-    // Extract course par from ESPN data, fallback to 72
-    const competition = espnData.events[0].competitions?.[0];
+    // Extract course par from data source, fallback to 72
+    const competition = dataSource.events[0].competitions?.[0];
     const coursePar = competition?.courses?.[0]?.par || competition?.venue?.course?.par || 72;
 
-    const players = espnData.events[0].competitions[0].competitors.map((player, idx) => {
+    const players = dataSource.events[0].competitions[0].competitors.map((player, idx) => {
       const linescores = player.linescores || [];
       const rounds = linescores.map(r => r.displayValue || '-');
 
@@ -2510,8 +2574,9 @@ export default function HighlineFantasyGolf() {
 
   // Check if Round 2 is complete (for winner bonus eligibility)
   const isRound3OrLater = () => {
-    if (!espnData?.events?.[0]?.competitions?.[0]?.competitors) return false;
-    const competitors = espnData.events[0].competitions[0].competitors;
+    const dataSource = getESPNDataForTournament();
+    if (!dataSource?.events?.[0]?.competitions?.[0]?.competitors) return false;
+    const competitors = dataSource.events[0].competitions[0].competitors;
     // Check if the majority of players have completed at least 2 rounds
     // We look at the leader or top players to determine the current round
     const topPlayers = competitors.slice(0, 10);
@@ -2849,10 +2914,10 @@ export default function HighlineFantasyGolf() {
           </nav>
 
           <div className="header-right">
-            {espnData && (
+            {(espnData || savedLeaderboards[liveTournamentId]) && (
               <div className="live-indicator">
                 <div className="live-dot"></div>
-                Live Data
+                {savedLeaderboards[liveTournamentId] ? 'Saved Data' : 'Live Data'}
               </div>
             )}
             {isCommissioner ? (
@@ -3460,18 +3525,37 @@ export default function HighlineFantasyGolf() {
                 }
 
                 if (tourneyStatus === 'final') {
-                  const results = tournamentResults[liveTournamentId];
-                  if (results) {
+                  const hasSavedLeaderboard = !!savedLeaderboards[liveTournamentId];
+                  if (!hasSavedLeaderboard) {
+                    // No saved data - show message
                     return (
                       <div className="final-results">
                         <h2>🏆 Final Results: {selectedTourneyConfig?.name}</h2>
-                        {/* Show saved results */}
                         <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>
-                          Results have been finalized for this tournament.
+                          No saved leaderboard data available for this tournament.
                         </p>
+                        {isCommissioner && (
+                          <p style={{ color: 'var(--accent-orange)', marginTop: '8px', fontSize: '14px' }}>
+                            Commissioner: If the ESPN scoreboard is currently showing this tournament's final results,
+                            click "Save Current ESPN Data" below to preserve them.
+                          </p>
+                        )}
+                        {isCommissioner && espnData?.events?.[0] && (
+                          <button
+                            className="btn"
+                            style={{ marginTop: '16px' }}
+                            onClick={() => {
+                              saveTournamentLeaderboard(liveTournamentId, espnData);
+                              showMessage(`Saved ESPN leaderboard data for ${selectedTourneyConfig?.name}`, 'success');
+                            }}
+                          >
+                            Save Current ESPN Data for {selectedTourneyConfig?.name}
+                          </button>
+                        )}
                       </div>
                     );
                   }
+                  // Has saved leaderboard data - fall through to show full scoreboard below
                 }
 
                 // Live tournament - show normal scoreboard
@@ -3654,6 +3738,58 @@ export default function HighlineFantasyGolf() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Commissioner: Save/Finalize Tournament button */}
+                  {isCommissioner && !savedLeaderboards[liveTournamentId] && (
+                    <div style={{ marginTop: '24px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--accent-orange)', marginBottom: '4px' }}>
+                            Commissioner: Save Tournament Scores
+                          </div>
+                          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                            Saves the current leaderboard so scores are preserved after the tournament ends.
+                          </div>
+                        </div>
+                        <button
+                          className="btn"
+                          style={{ whiteSpace: 'nowrap' }}
+                          onClick={() => {
+                            const dataToSave = getESPNDataForTournament();
+                            if (dataToSave?.events?.[0]) {
+                              saveTournamentLeaderboard(liveTournamentId, dataToSave);
+                              showMessage(`Saved leaderboard data for ${selectedTourneyConfig?.name}`, 'success');
+                            } else {
+                              showMessage('No leaderboard data available to save', 'error');
+                            }
+                          }}
+                        >
+                          Save Scores
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Indicator when viewing saved data */}
+                  {savedLeaderboards[liveTournamentId] && (
+                    <div style={{ marginTop: '16px', padding: '12px 16px', background: 'rgba(0, 255, 135, 0.08)', borderRadius: '8px', border: '1px solid rgba(0, 255, 135, 0.2)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--accent-green)' }}>Viewing saved tournament results</span>
+                      {isCommissioner && (
+                        <button
+                          className="btn btn-sm"
+                          style={{ marginLeft: 'auto', fontSize: '12px' }}
+                          onClick={() => {
+                            if (espnData?.events?.[0]) {
+                              saveTournamentLeaderboard(liveTournamentId, espnData);
+                              showMessage(`Updated saved data with current ESPN feed`, 'success');
+                            }
+                          }}
+                        >
+                          Re-save from ESPN
+                        </button>
+                      )}
+                    </div>
+                  )}
                   </>
                 );
               })()}
