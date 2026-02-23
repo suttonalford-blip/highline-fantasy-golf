@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set } from 'firebase/database';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
 // Firebase Configuration
 const firebaseConfig = {
@@ -16,6 +17,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
 const database = getDatabase(firebaseApp);
+const auth = getAuth(firebaseApp);
 
 // League Configuration
 const LEAGUE_CONFIG = {
@@ -139,8 +141,9 @@ const getDefaultTournamentId = () => {
   return allTournaments[0].id;
 };
 
-// Commissioner password (in production, use proper auth)
-const COMMISSIONER_PASSWORD = "highline2026";
+// Commissioner auth (configured in Firebase Authentication)
+const COMMISSIONER_EMAIL = import.meta.env.VITE_COMMISSIONER_EMAIL || 'commissioner@highlinefantasygolf.local';
+const COMMISSIONER_UID = import.meta.env.VITE_COMMISSIONER_UID || '';
 
 // Comprehensive PGA Player Database (Top 200+ OWGR + notable players)
 const PGA_PLAYERS = [
@@ -1993,6 +1996,17 @@ export default function HighlineFantasyGolf() {
     });
   };
 
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      const isAuthorizedCommissioner = Boolean(
+        user && ((COMMISSIONER_UID && user.uid === COMMISSIONER_UID) || user.email === COMMISSIONER_EMAIL)
+      );
+      setIsCommissioner(isAuthorizedCommissioner);
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
   // Load data from Firebase with real-time listeners
   useEffect(() => {
     // Initialize empty rosters first
@@ -2585,14 +2599,31 @@ export default function HighlineFantasyGolf() {
   }, [espnData, savedLeaderboards]);
 
   // Commissioner login
-  const handleCommissionerLogin = () => {
-    if (passwordInput === COMMISSIONER_PASSWORD) {
-      setIsCommissioner(true);
+  const handleCommissionerLogin = async () => {
+    if (!passwordInput) {
+      showMessage('Enter your commissioner password', 'error');
+      return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, COMMISSIONER_EMAIL, passwordInput);
       setShowPasswordModal(false);
       setPasswordInput('');
       showMessage('Welcome, Commissioner!', 'success');
-    } else {
+    } catch (error) {
+      console.error('Commissioner login failed:', error);
       showMessage('Incorrect password', 'error');
+    }
+  };
+
+  const handleCommissionerLogout = async () => {
+    try {
+      await signOut(auth);
+      setActiveTab('live');
+      showMessage('Commissioner mode disabled', 'success');
+    } catch (error) {
+      console.error('Commissioner logout failed:', error);
+      showMessage('Unable to log out right now', 'error');
     }
   };
 
@@ -3061,7 +3092,7 @@ export default function HighlineFantasyGolf() {
           <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
             <div className="modal" onClick={e => e.stopPropagation()}>
               <h2>🔐 Commissioner Login</h2>
-              <p>Enter the commissioner password to access admin features.</p>
+              <p>Enter the commissioner password to access admin features. (Backed by Firebase Authentication)</p>
               <div className="form-group">
                 <input
                   type="password"
@@ -3131,7 +3162,7 @@ export default function HighlineFantasyGolf() {
               </div>
             )}
             {isCommissioner ? (
-              <div className="commissioner-badge" onClick={() => setIsCommissioner(false)}>
+              <div className="commissioner-badge" onClick={handleCommissionerLogout}>
                 👑 Commissioner Mode
               </div>
             ) : (

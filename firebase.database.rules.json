@@ -1,0 +1,24 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": false,
+    "rosters": {
+      ".write": "auth != null && auth.uid === 'REPLACE_WITH_COMMISSIONER_UID'"
+    },
+    "lineups": {
+      ".write": "auth != null && auth.uid === 'REPLACE_WITH_COMMISSIONER_UID'"
+    },
+    "tournamentResults": {
+      ".write": "auth != null && auth.uid === 'REPLACE_WITH_COMMISSIONER_UID'"
+    },
+    "rentals": {
+      ".write": "auth != null && auth.uid === 'REPLACE_WITH_COMMISSIONER_UID'"
+    },
+    "preDraftLineups": {
+      ".write": "auth != null && auth.uid === 'REPLACE_WITH_COMMISSIONER_UID'"
+    },
+    "savedLeaderboards": {
+      ".write": "auth != null && auth.uid === 'REPLACE_WITH_COMMISSIONER_UID'"
+    }
+  }
+}
