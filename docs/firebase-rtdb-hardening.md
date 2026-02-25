@@ -43,3 +43,9 @@ This preserves current user experience:
 - No new front-end screens required.
 - No forced login for regular users.
 - Existing commissioner login interaction remains intact while removing insecure hardcoded password logic.
+
+## Deployment failure root cause to check
+
+If the site white-screens after deploy, verify `VITE_FIREBASE_API_KEY` is present in the build environment.
+`firebase/auth` validates API key settings more strictly than the previous client-only password gate.
+The app now fails closed for commissioner login when API key is missing, but keeps the public site readable.

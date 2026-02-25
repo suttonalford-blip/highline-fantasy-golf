@@ -142,8 +142,20 @@ const getDefaultTournamentId = () => {
 };
 
 // Commissioner auth (configured in Firebase Authentication)
-const COMMISSIONER_EMAIL = import.meta.env.VITE_COMMISSIONER_EMAIL || 'commissioner@highlinefantasygolf.local';
-const COMMISSIONER_UID = import.meta.env.VITE_COMMISSIONER_UID || '';
+const COMMISSIONER_EMAIL = import.meta.env.VITE_COMMISSIONER_EMAIL || 'sutton.alford@gmail.com';
+const COMMISSIONER_UID = import.meta.env.VITE_COMMISSIONER_UID || 'EFVvQoiN9xcoxBo3Hf2OT4qRTNn1';
+
+const hasFirebaseApiKey = Boolean(import.meta.env.VITE_FIREBASE_API_KEY);
+
+const getCommissionerAuth = () => {
+  if (!hasFirebaseApiKey) return null;
+  try {
+    return getAuth(firebaseApp);
+  } catch (error) {
+    console.error('Unable to initialize Firebase Auth:', error);
+    return null;
+  }
+};
 
 // Comprehensive PGA Player Database (Top 200+ OWGR + notable players)
 const PGA_PLAYERS = [
@@ -1997,9 +2009,16 @@ export default function HighlineFantasyGolf() {
   };
 
   useEffect(() => {
+    const commissionerAuth = getCommissionerAuth();
+    if (!commissionerAuth) {
+      setIsCommissioner(false);
+      return;
+    }
+
+    const unsubscribeAuth = onAuthStateChanged(commissionerAuth, (user) => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       const isAuthorizedCommissioner = Boolean(
-        user && ((COMMISSIONER_UID && user.uid === COMMISSIONER_UID) || user.email === COMMISSIONER_EMAIL)
+        user && ((COMMISSIONER_UID && user.uid === EFVvQoiN9xcoxBo3Hf2OT4qRTNn1) || user.email === 'sutton.alford@gmail.com')
       );
       setIsCommissioner(isAuthorizedCommissioner);
     });
