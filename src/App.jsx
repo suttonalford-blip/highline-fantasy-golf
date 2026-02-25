@@ -142,8 +142,8 @@ const getDefaultTournamentId = () => {
 };
 
 // Commissioner auth (configured in Firebase Authentication)
-const COMMISSIONER_EMAIL = import.meta.env.VITE_COMMISSIONER_EMAIL || 'commissioner@highlinefantasygolf.local';
-const COMMISSIONER_UID = import.meta.env.VITE_COMMISSIONER_UID || '';
+const COMMISSIONER_EMAIL = import.meta.env.VITE_COMMISSIONER_EMAIL || 'sutton.alford@gmail.com';
+const COMMISSIONER_UID = import.meta.env.VITE_COMMISSIONER_UID || 'EFVvQoiN9xcoxBo3Hf2OT4qRTNn1';
 
 // Comprehensive PGA Player Database (Top 200+ OWGR + notable players)
 const PGA_PLAYERS = [

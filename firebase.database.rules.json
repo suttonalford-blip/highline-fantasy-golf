@@ -3,22 +3,22 @@
     ".read": true,
     ".write": false,
     "rosters": {
-      ".write": "auth != null"
+      ".write": "auth != null && auth.uid === 'EFVvQoiN9xcoxBo3Hf2OT4qRTNn1'"
     },
     "lineups": {
-      ".write": "auth != null"
+      ".write": "auth != null && auth.uid === 'EFVvQoiN9xcoxBo3Hf2OT4qRTNn1'"
     },
     "tournamentResults": {
-      ".write": "auth != null"
+      ".write": "auth != null && auth.uid === 'EFVvQoiN9xcoxBo3Hf2OT4qRTNn1'"
     },
     "rentals": {
-      ".write": "auth != null"
+      ".write": "auth != null && auth.uid === 'EFVvQoiN9xcoxBo3Hf2OT4qRTNn1'"
     },
     "preDraftLineups": {
-      ".write": "auth != null"
+      ".write": "auth != null && auth.uid === 'EFVvQoiN9xcoxBo3Hf2OT4qRTNn1'"
     },
     "savedLeaderboards": {
-      ".write": "auth != null"
+      ".write": "auth != null && auth.uid === 'EFVvQoiN9xcoxBo3Hf2OT4qRTNn1'"
     }
   }
 }
