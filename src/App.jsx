@@ -2942,10 +2942,11 @@ export default function HighlineFantasyGolf() {
           
           const displayScore = playerScore === 0 ? 'E' : (playerScore < 0 ? playerScore : `+${playerScore}`);
           const isRental = teamRentals.some(r => r.toLowerCase() === playerName.toLowerCase());
-          starterScores.push({ 
-            name: playerName, 
+          starterScores.push({
+            name: playerName,
             score: penaltyApplied ? displayScore : player.score,
             originalScore: player.score,
+            scoreNum: playerScore,
             rank: player.rank,
             isCut: player.isCut,
             isWD: player.isWD,
@@ -3076,6 +3077,117 @@ export default function HighlineFantasyGolf() {
     saveLineups(newLineups);
   };
 
+  // Calculate season standings with points from completed tournaments
+  const calculateSeasonStandings = () => {
+    const tournaments = selectedSeason === 1 ? LEAGUE_CONFIG.season1Tournaments : LEAGUE_CONFIG.season2Tournaments;
+
+    const teamData = {};
+    LEAGUE_CONFIG.teams.forEach(team => {
+      teamData[team.id] = {
+        ...team,
+        totalPoints: 0,
+        tournamentPoints: {}
+      };
+    });
+
+    tournaments.forEach(tourney => {
+      const saved = savedLeaderboards[tourney.id];
+      if (!saved?.events?.[0]?.competitions?.[0]?.competitors) return;
+
+      const competition = saved.events[0].competitions[0];
+      const coursePar = competition?.courses?.[0]?.par || competition?.venue?.course?.par || 72;
+      const competitors = competition.competitors;
+      const isMajor = tourney.isMajor;
+
+      // Build leaderboard from saved data
+      const lbMap = {};
+      competitors.forEach((player, idx) => {
+        const name = player.athlete?.displayName || 'Unknown';
+        const scoreNum = parseInt(player.score) || 0;
+        const statusType = player.status?.type?.name?.toLowerCase() || '';
+        const statusDisplay = player.status?.displayValue || '';
+        const ls = player.linescores || [];
+        const roundScores = ls.map(r => {
+          const d = r.displayValue;
+          if (!d || d === '-') return null;
+          if (d === 'E') return 0;
+          const val = parseInt(d);
+          if (isNaN(val)) return null;
+          return (val >= 50 && val <= 100) ? val - coursePar : val;
+        });
+
+        const explicitCut = statusType === 'cut' || statusDisplay === 'CUT';
+        const isWD = statusType === 'wd' || statusDisplay === 'WD';
+        const isDQ = statusType === 'dq' || statusDisplay === 'DQ';
+        const hasR3 = roundScores[2] != null;
+        const madeCut = !explicitCut && !isWD && !isDQ && hasR3;
+
+        let weekendScore = null;
+        if (roundScores[2] != null || roundScores[3] != null) {
+          weekendScore = (roundScores[2] || 0) + (roundScores[3] || 0);
+        }
+
+        lbMap[name.toLowerCase()] = {
+          rank: player.order || idx + 1, name, scoreNum,
+          isCut: explicitCut, isWD, isDQ, madeCut, weekendScore, roundScores, hasR3
+        };
+      });
+
+      const lbArr = Object.values(lbMap);
+      const cutMakers = lbArr.filter(p => p.madeCut && p.weekendScore !== null);
+      const worstWeekendScore = cutMakers.length > 0 ? Math.max(...cutMakers.map(p => p.weekendScore)) : 0;
+      const cutHasHappened = lbArr.some(p => p.isCut);
+
+      const allStarters = LEAGUE_CONFIG.teams.flatMap(team =>
+        (lineups[tourney.id]?.[team.id] || []).map(n => lbMap[n.toLowerCase()]).filter(Boolean)
+      );
+      const nonWDDQ = allStarters.filter(p => !p.isWD && !p.isDQ);
+      const worstStarterScore = nonWDDQ.length > 0 ? Math.max(...nonWDDQ.map(p => p.scoreNum)) : 0;
+      const nonWDDQCut = nonWDDQ.filter(p => p.madeCut);
+      const worstAfterCut = nonWDDQCut.length > 0 ? Math.max(...nonWDDQCut.map(p => p.scoreNum)) : 0;
+      const leaders = lbArr.filter(p => p.rank === 1).map(p => p.name.toLowerCase());
+
+      const teamScores = LEAGUE_CONFIG.teams.map(team => {
+        const starters = lineups[tourney.id]?.[team.id] || [];
+        let total = 0;
+        let hasLeader = false;
+
+        starters.forEach(pName => {
+          const p = lbMap[pName.toLowerCase()];
+          if (!p) return;
+          let s = p.scoreNum;
+          if (p.isCut && cutHasHappened) {
+            s = p.scoreNum + worstWeekendScore;
+          } else if (p.isWD || p.isDQ) {
+            if (p.madeCut || (cutHasHappened && p.roundScores && p.roundScores[2] !== null)) {
+              s = worstAfterCut;
+            } else {
+              s = worstStarterScore;
+            }
+          }
+          total += s;
+          if (!p.isCut && !p.isWD && !p.isDQ && leaders.includes(pName.toLowerCase())) hasLeader = true;
+        });
+
+        if (hasLeader) total -= LEAGUE_CONFIG.winnerBonus;
+        return { teamId: team.id, totalScore: total, starterCount: starters.length };
+      });
+
+      const sorted = [...teamScores].filter(t => t.starterCount > 0).sort((a, b) => a.totalScore - b.totalScore);
+      sorted.forEach((t, idx) => {
+        t.rank = (idx > 0 && t.totalScore === sorted[idx - 1].totalScore) ? sorted[idx - 1].rank : idx + 1;
+      });
+      sorted.forEach(t => {
+        const pts = LEAGUE_CONFIG.pointsTable[t.rank] || 0;
+        const adjusted = isMajor ? pts * LEAGUE_CONFIG.majorMultiplier : pts;
+        teamData[t.teamId].tournamentPoints[tourney.id] = adjusted;
+        teamData[t.teamId].totalPoints += adjusted;
+      });
+    });
+
+    return Object.values(teamData).sort((a, b) => b.totalPoints - a.totalPoints);
+  };
+
   const tournament = getCurrentTournament();
   const leaderboard = getLeaderboard();
   const teamStandings = calculateTeamStandings();
@@ -3100,7 +3212,7 @@ export default function HighlineFantasyGolf() {
                   placeholder="Password"
                   value={passwordInput}
                   onChange={e => setPasswordInput(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && handleCommissionerLogin()}
+                  onKeyDown={e => e.key === 'Enter' && handleCommissionerLogin()}
                   autoFocus
                 />
               </div>
@@ -3807,7 +3919,7 @@ export default function HighlineFantasyGolf() {
                         </div>
 
                         {/* Add player search */}
-                        <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                        <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                           <label style={{ color: 'var(--text-secondary)', fontWeight: 500, display: 'block', marginBottom: '8px' }}>
                             Add Player
                           </label>
@@ -3989,9 +4101,6 @@ export default function HighlineFantasyGolf() {
                     );
                   }
 
-                  if (!hasSavedLeaderboard) {
-                    return null;
-                  }
                   // Has saved leaderboard data - fall through to show full scoreboard below
                 }
 
@@ -4046,7 +4155,7 @@ export default function HighlineFantasyGolf() {
                                   const bonusActive = isRound3OrLater();
                                   const isLeader = bonusActive && !starter.isCut && !starter.isWD && !starter.isDQ && getLeaders().includes(starter.name.toLowerCase());
                                   const hasPenalty = starter.isCut || starter.isWD || starter.isDQ;
-                                  const playerScore = parseInt(starter.score) || 0;
+                                  const playerScore = starter.scoreNum || 0;
                                   return (
                                     <div key={sIdx} className={`scoreboard-player ${hasPenalty ? 'penalty' : ''} ${isLeader ? 'leader' : ''} ${starter.isRental ? 'rental' : ''}`}>
                                       <span className="scoreboard-player-name">
@@ -4178,7 +4287,7 @@ export default function HighlineFantasyGolf() {
 
                   {/* Commissioner: Save/Finalize Tournament button */}
                   {isCommissioner && !savedLeaderboards[liveTournamentId] && (
-                    <div style={{ marginTop: '24px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                    <div style={{ marginTop: '24px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
                           <div style={{ fontWeight: 600, color: 'var(--accent-orange)', marginBottom: '4px' }}>
@@ -4365,42 +4474,53 @@ export default function HighlineFantasyGolf() {
                 </div>
               </div>
 
-              <div className="card">
-                <table className="standings-table">
-                  <thead>
-                    <tr>
-                      <th>Rank</th>
-                      <th>Team</th>
-                      <th>Points</th>
-                      <th>T1</th>
-                      <th>T2</th>
-                      <th>T3</th>
-                      <th>T4</th>
-                      <th>T5</th>
-                      <th>T6</th>
-                      <th>T7</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {LEAGUE_CONFIG.teams.map((team, idx) => (
-                      <tr key={team.id}>
-                        <td className="rank">{idx + 1}</td>
-                        <td style={{ fontWeight: 500 }}>{team.name}</td>
-                        <td style={{ 
-                          fontFamily: 'JetBrains Mono', 
-                          fontWeight: 600,
-                          color: 'var(--accent-green)' 
-                        }}>
-                          0
-                        </td>
-                        {[1, 2, 3, 4, 5, 6, 7].map(t => (
-                          <td key={t} style={{ color: 'var(--text-muted)' }}>-</td>
+              {(() => {
+                const seasonStandings = calculateSeasonStandings();
+                const seasonTournaments = selectedSeason === 1 ? LEAGUE_CONFIG.season1Tournaments : LEAGUE_CONFIG.season2Tournaments;
+                return (
+                  <div className="card">
+                    <table className="standings-table">
+                      <thead>
+                        <tr>
+                          <th>Rank</th>
+                          <th>Team</th>
+                          <th>Points</th>
+                          {seasonTournaments.map((t, i) => (
+                            <th key={t.id} title={t.name}>T{i + 1}{t.isMajor ? ' ⭐' : ''}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {seasonStandings.map((team, idx) => (
+                          <tr key={team.id}>
+                            <td className={`rank ${idx < 3 ? 'top-3' : ''}`}>{idx + 1}</td>
+                            <td style={{ fontWeight: 500 }}>{team.name}</td>
+                            <td style={{
+                              fontFamily: 'JetBrains Mono',
+                              fontWeight: 600,
+                              color: team.totalPoints > 0 ? 'var(--accent-green)' : 'var(--text-muted)'
+                            }}>
+                              {team.totalPoints}
+                            </td>
+                            {seasonTournaments.map(t => {
+                              const pts = team.tournamentPoints[t.id];
+                              return (
+                                <td key={t.id} style={{
+                                  fontFamily: 'JetBrains Mono',
+                                  fontSize: '13px',
+                                  color: pts > 0 ? 'var(--accent-green)' : pts === 0 ? 'var(--text-muted)' : 'var(--text-muted)'
+                                }}>
+                                  {pts !== undefined ? pts : '-'}
+                                </td>
+                              );
+                            })}
+                          </tr>
                         ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
 
               <div style={{ marginTop: '32px' }}>
                 <h2 style={{ marginBottom: '16px' }}>Tournament Schedule</h2>
@@ -4416,27 +4536,40 @@ export default function HighlineFantasyGolf() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(selectedSeason === 1 ? LEAGUE_CONFIG.season1Tournaments : LEAGUE_CONFIG.season2Tournaments)
-                        .map((t, idx) => (
-                          <tr key={idx}>
-                            <td className="rank">{idx + 1}</td>
-                            <td style={{ fontWeight: 500 }}>{t.name}</td>
-                            <td>{t.dates}</td>
-                            <td>
-                              {t.isMajor ? (
-                                <span style={{ 
-                                  color: 'var(--accent-gold)',
-                                  fontWeight: 600 
+                      {(() => {
+                        const allTourneys = getAllTournaments();
+                        return (selectedSeason === 1 ? LEAGUE_CONFIG.season1Tournaments : LEAGUE_CONFIG.season2Tournaments)
+                          .map((t, idx) => {
+                            const tourneyWithStatus = allTourneys.find(at => at.id === t.id);
+                            const status = tourneyWithStatus?.status || 'upcoming';
+                            return (
+                              <tr key={idx}>
+                                <td className="rank">{idx + 1}</td>
+                                <td style={{ fontWeight: 500 }}>{t.name}</td>
+                                <td>{t.dates}</td>
+                                <td>
+                                  {t.isMajor ? (
+                                    <span style={{
+                                      color: 'var(--accent-gold)',
+                                      fontWeight: 600
+                                    }}>
+                                      ⭐ Major (2x)
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)' }}>Regular</span>
+                                  )}
+                                </td>
+                                <td style={{
+                                  color: status === 'live' ? 'var(--accent-green)' :
+                                         status === 'final' ? 'var(--accent-green)' : 'var(--text-muted)',
+                                  fontWeight: status === 'live' ? 600 : 400
                                 }}>
-                                  ⭐ Major (2x)
-                                </span>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)' }}>Regular</span>
-                              )}
-                            </td>
-                            <td style={{ color: 'var(--text-muted)' }}>Upcoming</td>
-                          </tr>
-                        ))}
+                                  {status === 'live' ? '🔴 Live' : status === 'final' ? '✅ Final' : '⏳ Upcoming'}
+                                </td>
+                              </tr>
+                            );
+                          });
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -4618,7 +4751,7 @@ export default function HighlineFantasyGolf() {
                     <div className="lineup-editor">
                       {LEAGUE_CONFIG.teams.map(team => {
                         const roster = rosters[team.id];
-                        const starters = getTeamStarters(team.id);
+                        const starters = getTeamStarters(team.id, selectedTournament);
                         const maxStarters = currentTournamentConfig?.isMajor ? 6 : 4;
                         
                         return (
