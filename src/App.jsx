@@ -4,8 +4,10 @@ import { getDatabase, ref, onValue, set } from 'firebase/database';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
 // Firebase Configuration
+// Note: Firebase web API keys are public by design; security is enforced by
+// Firebase Security Rules, not by hiding the key.
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD98XTU_SfFu9x4F5jqLDdne8_2hfH90qg",
   authDomain: "highline-fantasy-golf.firebaseapp.com",
   databaseURL: "https://highline-fantasy-golf-default-rtdb.firebaseio.com",
   projectId: "highline-fantasy-golf",
@@ -2082,25 +2084,29 @@ export default function HighlineFantasyGolf() {
     };
   }, []);
 
-  // Save data to Firebase
+  // Save data to Firebase (writes silently log errors so UI stays responsive)
   const saveRosters = (newRosters) => {
     setRosters(newRosters);
-    set(ref(database, 'rosters'), newRosters);
+    set(ref(database, 'rosters'), newRosters)
+      .catch(err => console.error('Failed to save rosters:', err));
   };
 
   const savePreDraftLineups = (newLineups) => {
     setPreDraftLineups(newLineups);
-    set(ref(database, 'preDraftLineups'), newLineups);
+    set(ref(database, 'preDraftLineups'), newLineups)
+      .catch(err => console.error('Failed to save pre-draft lineups:', err));
   };
 
   const saveLineups = (newLineups) => {
     setLineups(newLineups);
-    set(ref(database, 'lineups'), newLineups);
+    set(ref(database, 'lineups'), newLineups)
+      .catch(err => console.error('Failed to save lineups:', err));
   };
 
   const saveTournamentResults = (newResults) => {
     setTournamentResults(newResults);
-    set(ref(database, 'tournamentResults'), newResults);
+    set(ref(database, 'tournamentResults'), newResults)
+      .catch(err => console.error('Failed to save tournament results:', err));
   };
 
   // Save the full ESPN leaderboard data for a tournament so it can be viewed after the tournament ends.
@@ -2170,7 +2176,8 @@ export default function HighlineFantasyGolf() {
 
   const saveRentals = (newRentals) => {
     setRentals(newRentals);
-    set(ref(database, 'rentals'), newRentals);
+    set(ref(database, 'rentals'), newRentals)
+      .catch(err => console.error('Failed to save rentals:', err));
   };
 
   // Initialize manual score entries from existing lineup players for a tournament
