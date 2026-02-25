@@ -2023,6 +2023,10 @@ export default function HighlineFantasyGolf() {
     const preDraftRef = ref(database, 'preDraftLineups');
     const savedLeaderboardsRef = ref(database, 'savedLeaderboards');
 
+    const handleFirebaseError = (error) => {
+      console.error('Firebase read error:', error?.message || error);
+    };
+
     const unsubscribeRosters = onValue(rostersRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -2030,42 +2034,42 @@ export default function HighlineFantasyGolf() {
       } else {
         setRosters(initialRosters);
       }
-    });
+    }, handleFirebaseError);
 
     const unsubscribeLineups = onValue(lineupsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setLineups(data);
       }
-    });
+    }, handleFirebaseError);
 
     const unsubscribeResults = onValue(resultsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setTournamentResults(data);
       }
-    });
+    }, handleFirebaseError);
 
     const unsubscribeRentals = onValue(rentalsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setRentals(data);
       }
-    });
+    }, handleFirebaseError);
 
     const unsubscribePreDraft = onValue(preDraftRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setPreDraftLineups(data);
       }
-    });
+    }, handleFirebaseError);
 
     const unsubscribeSavedLeaderboards = onValue(savedLeaderboardsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setSavedLeaderboards(data);
       }
-    });
+    }, handleFirebaseError);
 
     // Cleanup listeners on unmount
     return () => {
