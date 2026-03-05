@@ -5,9 +5,10 @@ import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from
 
 // Firebase Configuration
 // Note: Firebase web API keys are public by design; security is enforced by
-// Firebase Security Rules, not by hiding the key.
+// Firebase Security Rules, not by hiding the key. The key is stored in
+// .env.local (gitignored) via VITE_FIREBASE_API_KEY.
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD98XTU_SfFu9x4F5jqLDdne8_2hfH90qg",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "highline-fantasy-golf.firebaseapp.com",
   databaseURL: "https://highline-fantasy-golf-default-rtdb.firebaseio.com",
   projectId: "highline-fantasy-golf",
