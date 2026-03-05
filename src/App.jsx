@@ -410,15 +410,6 @@ const fetchESPNLeaderboard = async () => {
   }
 };
 
-// Storage keys
-const STORAGE_KEYS = {
-  ROSTERS: 'highline-rosters',
-  LINEUPS: 'highline-lineups',
-  DRAFT_RESULTS: 'highline-draft',
-  TOURNAMENT_RESULTS: 'highline-tournament-results',
-  RENTALS: 'highline-rentals',
-  PREDRAFT_LINEUPS: 'highline-predraft-lineups'
-};
 
 // Styles
 const styles = `
@@ -2623,7 +2614,18 @@ export default function HighlineFantasyGolf() {
       showMessage('Welcome, Commissioner!', 'success');
     } catch (error) {
       console.error('Commissioner login failed:', error);
-      showMessage('Incorrect password', 'error');
+      const code = error?.code;
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        showMessage('Incorrect password', 'error');
+      } else if (code === 'auth/too-many-requests') {
+        showMessage('Account temporarily locked due to too many failed attempts. Please try again later.', 'error');
+      } else if (code === 'auth/network-request-failed') {
+        showMessage('Network error. Please check your connection and try again.', 'error');
+      } else if (code === 'auth/user-not-found') {
+        showMessage('Commissioner account not found. Check Firebase Authentication setup.', 'error');
+      } else {
+        showMessage(`Login failed: ${error.message || error.code || 'Unknown error'}`, 'error');
+      }
     }
   };
 
