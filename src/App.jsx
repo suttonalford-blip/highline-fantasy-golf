@@ -394,6 +394,21 @@ const PGA_PLAYERS = [
   { name: "Ben Martin", rank: 238 },
   { name: "Dylan Wu", rank: 239 },
   { name: "Callum Tarren", rank: 240 },
+  // 2026 Masters field additions (past champions, amateurs, international qualifiers)
+  { name: "Angel Cabrera", rank: 241 },
+  { name: "Fred Couples", rank: 242 },
+  { name: "José María Olazábal", rank: 243 },
+  { name: "Vijay Singh", rank: 244 },
+  { name: "Mike Weir", rank: 245 },
+  { name: "Danny Willett", rank: 246 },
+  { name: "Casey Jarvis", rank: 247 },
+  { name: "Naoyuki Kataoka", rank: 248 },
+  { name: "Ethan Fang", rank: 249 },
+  { name: "Jackson Herrington", rank: 250 },
+  { name: "Brandon Holtz", rank: 251 },
+  { name: "Mason Howell", rank: 252 },
+  { name: "Fifa Laopakdee", rank: 253 },
+  { name: "Mateo Pulcini", rank: 254 },
 ];
 
 // ESPN API helper
