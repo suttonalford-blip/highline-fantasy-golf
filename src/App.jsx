@@ -409,6 +409,7 @@ const PGA_PLAYERS = [
   { name: "Mason Howell", rank: 252 },
   { name: "Fifa Laopakdee", rank: 253 },
   { name: "Mateo Pulcini", rank: 254 },
+  { name: "Sudarshan Yellamaraju", rank: 120 },
 ];
 
 // ESPN API helper
