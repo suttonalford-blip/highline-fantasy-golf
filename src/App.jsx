@@ -62,6 +62,7 @@ const LEAGUE_CONFIG = {
     { id: "s1t5", name: "THE PLAYERS Championship", dates: "Mar 12-15", espnId: "401811937", isMajor: false },
     { id: "s1t6", name: "Masters Tournament", dates: "Apr 9-12", espnId: "401811941", isMajor: true },
     { id: "s1t7", name: "RBC Heritage", dates: "Apr 16-19", espnId: "401811942", isMajor: false },
+    { id: "s1t8", name: "Cadillac Championship", dates: "Apr 30-May 3", espnId: "401811944", isMajor: false },
   ],
   season2Tournaments: [
     { id: "s2t1", name: "Truist Championship", dates: "May 7-10", espnId: "401811945", isMajor: false },
